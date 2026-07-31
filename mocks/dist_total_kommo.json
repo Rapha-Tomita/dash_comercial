@@ -1,0 +1,10 @@
+{
+  "ok": true,
+  "total": 1874,
+  "total_distribuidos": 1802,
+  "total_kommo": 1874,
+  "so_kommo": [
+    { "id_lead": 55123001, "nome": "Lead sem distribuição #1" },
+    { "id_lead": 55123002, "nome": "Lead sem distribuição #2" }
+  ]
+}

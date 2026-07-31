@@ -1,0 +1,141 @@
+{
+  "ok": true,
+  "ranking_agentes": [
+    {
+      "user_id": 8261901,
+      "nome": "Rahi Almeida",
+      "matriculas_periodo": 58,
+      "ganhos": 61,
+      "meta": 45,
+      "meta_intermediaria": 30,
+      "supermeta": 60,
+      "novos_periodo": 210,
+      "taxa_conversao": 27.6,
+      "horas_media": 7.4,
+      "metas_cat": { "matriculas": 45 }
+    },
+    {
+      "user_id": 8261902,
+      "nome": "Gabriel Messias",
+      "matriculas_periodo": 51,
+      "ganhos": 53,
+      "meta": 45,
+      "meta_intermediaria": 30,
+      "supermeta": 60,
+      "novos_periodo": 198,
+      "taxa_conversao": 25.8,
+      "horas_media": 7.1,
+      "metas_cat": { "matriculas": 45 }
+    },
+    {
+      "user_id": 8261903,
+      "nome": "Beatriz Souza",
+      "matriculas_periodo": 47,
+      "ganhos": 48,
+      "meta": 40,
+      "meta_intermediaria": 26,
+      "supermeta": 55,
+      "novos_periodo": 175,
+      "taxa_conversao": 26.9,
+      "horas_media": 6.8,
+      "metas_cat": { "matriculas": 40 }
+    },
+    {
+      "user_id": 8261904,
+      "nome": "Hugo Ferreira",
+      "matriculas_periodo": 39,
+      "ganhos": 40,
+      "meta": 40,
+      "meta_intermediaria": 26,
+      "supermeta": 55,
+      "novos_periodo": 160,
+      "taxa_conversao": 24.4,
+      "horas_media": 6.5,
+      "metas_cat": { "matriculas": 40 }
+    },
+    {
+      "user_id": 8261905,
+      "nome": "Juliana Prado",
+      "matriculas_periodo": 33,
+      "ganhos": 35,
+      "meta": 35,
+      "meta_intermediaria": 22,
+      "supermeta": 48,
+      "novos_periodo": 142,
+      "taxa_conversao": 23.2,
+      "horas_media": 6.9,
+      "metas_cat": { "matriculas": 35 }
+    },
+    {
+      "user_id": 8261906,
+      "nome": "Paloma Ribeiro",
+      "matriculas_periodo": 29,
+      "ganhos": 30,
+      "meta": 35,
+      "meta_intermediaria": 22,
+      "supermeta": 48,
+      "novos_periodo": 130,
+      "taxa_conversao": 22.3,
+      "horas_media": 6.2,
+      "metas_cat": { "matriculas": 35 }
+    },
+    {
+      "user_id": 8261907,
+      "nome": "Kamilly Torres",
+      "matriculas_periodo": 24,
+      "ganhos": 25,
+      "meta": 30,
+      "meta_intermediaria": 18,
+      "supermeta": 42,
+      "novos_periodo": 118,
+      "taxa_conversao": 20.3,
+      "horas_media": 5.9,
+      "metas_cat": { "matriculas": 30 }
+    },
+    {
+      "user_id": 8261908,
+      "nome": "Claudia Nunes",
+      "matriculas_periodo": 17,
+      "ganhos": 18,
+      "meta": 30,
+      "meta_intermediaria": 18,
+      "supermeta": 42,
+      "novos_periodo": 96,
+      "taxa_conversao": 17.7,
+      "horas_media": 5.4,
+      "metas_cat": { "matriculas": 30 }
+    }
+  ],
+  "matriculas_grid": [
+    { "rgm": "49497001", "data": "2026-07-28", "user_id": 8261901, "nome": "Rahi Almeida", "count": 3, "count_liquido": 3 },
+    { "rgm": "49497002", "data": "2026-07-29", "user_id": 8261901, "nome": "Rahi Almeida", "count": 2, "count_liquido": 2 },
+    { "rgm": "49497003", "data": "2026-07-30", "user_id": 8261901, "nome": "Rahi Almeida", "count": 4, "count_liquido": 4 },
+    { "rgm": "49504101", "data": "2026-07-28", "user_id": 8261902, "nome": "Gabriel Messias", "count": 2, "count_liquido": 2 },
+    { "rgm": "49504102", "data": "2026-07-29", "user_id": 8261902, "nome": "Gabriel Messias", "count": 3, "count_liquido": 3 },
+    { "rgm": "49510201", "data": "2026-07-30", "user_id": 8261903, "nome": "Beatriz Souza", "count": 2, "count_liquido": 2 },
+    { "rgm": "49510202", "data": "2026-07-22", "user_id": 8261903, "nome": "Beatriz Souza", "count": 3, "count_liquido": 3 },
+    { "rgm": "49512301", "data": "2026-07-15", "user_id": 8261904, "nome": "Hugo Ferreira", "count": 2, "count_liquido": 2 },
+    { "rgm": "49515401", "data": "2026-07-08", "user_id": 8261905, "nome": "Juliana Prado", "count": 1, "count_liquido": 1 }
+  ],
+  "transferencia_regresso": {
+    "total": 3,
+    "itens": [
+      { "rgm": "38204471", "nome": "Marcos Vinicius Lopes" },
+      { "rgm": "41209983", "nome": "Sabrina Dias Correia" },
+      { "rgm": "38217765", "nome": "Everton Batista da Silva" }
+    ]
+  },
+  "metas_aviso": null,
+  "daily_history": {
+    "2026-07-30": {
+      "leads_novos": 42,
+      "matriculas": 17,
+      "media_movel_7d": 12.4
+    },
+    "2026-07-29": {
+      "leads_novos": 39,
+      "matriculas": 20,
+      "media_movel_7d": 11.8
+    }
+  }
+}

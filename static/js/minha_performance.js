@@ -1,0 +1,2063 @@
+/* ═══════════════  Minha Performance v2 — Redesign  ═══════════════ */
+
+let _mpCharts = {};
+let _mpSelectedUid = null;
+let _mpMyUid = null;
+let _mpIsAdmin = false;
+let _mpCanManagePremiacao = false;
+let _mpSuporteEquipe = false;
+let _mpAgentsLoaded = false;
+let _mpSelectedCampanhaId = null;
+let _mpCampanhasLoaded = false;
+
+const _mpFmt  = v => Number(v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+const _mpFmtN = v => Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:0,maximumFractionDigits:0});
+
+function _mpFmtDate(d) {
+    if (!d) return '';
+    const p = String(d).split('-');
+    return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : d;
+}
+
+function _mpDestroyCharts() {
+    Object.values(_mpCharts).forEach(c => { try { c.destroy(); } catch(e) {} });
+    _mpCharts = {};
+}
+
+function _mpCountUp(elId, endVal, opts = {}) {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    if (typeof countUp !== 'undefined' && countUp.CountUp) {
+        const defaults = { duration: 1.8, useGrouping: true, separator: '.', decimal: ',', enableScrollSpy: false };
+        const cu = new countUp.CountUp(elId, endVal, { ...defaults, ...opts });
+        if (!cu.error) cu.start(); else el.textContent = opts.formattedValue || endVal;
+    } else {
+        el.textContent = opts.formattedValue || endVal;
+    }
+}
+
+function _mpSparkline(containerId, data, color) {
+    const el = document.getElementById(containerId);
+    if (!el || typeof ApexCharts === 'undefined' || !data.length) { if(el) el.innerHTML = ''; return; }
+    const chart = new ApexCharts(el, {
+        chart: { type: 'area', height: 35, sparkline: { enabled: true }, animations: { enabled: true, easing: 'easeinout', speed: 800 } },
+        series: [{ data }],
+        stroke: { width: 2, curve: 'smooth' },
+        fill: { type: 'gradient', gradient: { opacityFrom: .4, opacityTo: .05 } },
+        colors: [color || '#10b981'],
+        tooltip: { enabled: false },
+    });
+    chart.render();
+    _mpCharts['spark_' + containerId] = chart;
+}
+
+function navigateToPerformance(kommoUid) {
+    _mpSelectedUid = kommoUid || null;
+    navigate('minha_performance', { uid: kommoUid });
+}
+
+/* ── Entry ── */
+async function loadMinhaPerformance(params) {
+    if (params?.uid && params.uid !== 'suporte_equipe') {
+        const n = Number(params.uid);
+        if (!Number.isNaN(n)) _mpSelectedUid = n;
+    }
+
+    _mpDestroyCharts();
+    _mpMatLoaded = false;
+    _mpCurrentTab = 'performance';
+
+    const loading  = document.getElementById('mp-loading');
+    const noLink   = document.getElementById('mp-no-link');
+    const noCamp   = document.getElementById('mp-no-campanha');
+    const content  = document.getElementById('mp-content');
+    const heroWrap = document.getElementById('mp-hero-wrap');
+    const adminBar = document.getElementById('mp-admin-bar');
+    const matContent = document.getElementById('mp-mat-content');
+    const tabs = document.getElementById('mp-tabs');
+    const campWrap = document.getElementById('mp-campanha-wrap');
+    [loading, noLink, noCamp, content, heroWrap, matContent, tabs, campWrap].forEach(el => { if(el) el.classList.add('hidden'); });
+    if (loading) loading.classList.remove('hidden');
+
+    try {
+        const meRes = await api('/api/me');
+        const me = await meRes.json();
+        const kommoUid = me?.kommo_user_id;
+        _mpIsAdmin = me?.role === 'admin';
+        _mpCanManagePremiacao = _mpIsAdmin || (me?.pages || []).includes('premiacao_admin');
+        _mpMyUid = kommoUid;
+
+        const isSuporteLogin = document.body?.dataset?.isSuporteComercial === '1'
+            || me?.is_suporte_comercial
+            || String(me?.categoria || '').toLowerCase() === 'suporte comercial';
+        if (isSuporteLogin && !_mpCanManagePremiacao) {
+            _mpSuporteEquipe = true;
+            _mpSelectedUid = 'suporte_equipe';
+        }
+
+        if (_mpCanManagePremiacao && adminBar) {
+            adminBar.classList.remove('hidden');
+            await _mpLoadAgentSelector();
+        } else if (adminBar) {
+            adminBar.classList.add('hidden');
+        }
+
+        const selAgent = document.getElementById('mp-agent-select');
+        if (selAgent?.value) {
+            _mpSelectedUid = selAgent.value === 'suporte_equipe' ? 'suporte_equipe' : Number(selAgent.value);
+        }
+        _mpSuporteEquipe = _mpSelectedUid === 'suporte_equipe';
+
+        const effectiveUid = _mpSuporteEquipe
+            ? null
+            : ((_mpCanManagePremiacao && _mpSelectedUid) ? _mpSelectedUid : kommoUid);
+
+        if (!effectiveUid && !_mpCanManagePremiacao && !_mpSuporteEquipe) {
+            if (loading) loading.classList.add('hidden');
+            if (noLink) noLink.classList.remove('hidden');
+            if (typeof _dismissBootSplash === 'function') _dismissBootSplash();
+            return;
+        }
+
+        _mpUpdateAdminViewingState(effectiveUid);
+
+        await _mpLoadCampanhasSelector();
+
+        const qsParams = new URLSearchParams();
+        if (_mpSuporteEquipe) qsParams.set('suporte_equipe', '1');
+        else if (effectiveUid) qsParams.set('kommo_uid', effectiveUid);
+        if (_mpSelectedCampanhaId) qsParams.set('campanha_id', _mpSelectedCampanhaId);
+        const qs = qsParams.toString() ? '?' + qsParams.toString() : '';
+
+        const [insightsRes] = await Promise.all([
+            api(`/api/minha-performance/insights${qs}`),
+        ]);
+        const insights = await insightsRes.json();
+
+        if (loading) loading.classList.add('hidden');
+
+        if (!insights?.campanha) {
+            if (noCamp) noCamp.classList.remove('hidden');
+            if (typeof _dismissBootSplash === 'function') _dismissBootSplash();
+            return;
+        }
+
+        if (content) content.classList.remove('hidden');
+        if (heroWrap) heroWrap.classList.remove('hidden');
+        if (tabs) tabs.classList.remove('hidden');
+        if (campWrap) campWrap.classList.remove('hidden');
+
+        const isSuporteView = _mpSuporteEquipe || insights.painel_suporte || insights.suporte_equipe_view;
+        if (isSuporteView) await _mpMergeComercialVendas(insights);
+        if (isSuporteView) _mpSyncHeatmapFromChart(insights);
+        _mpApplySuporteLayout(insights);
+        if (!isSuporteView) _mpRenderHero(insights);
+        if (!isSuporteView) {
+            _mpRenderIncentiveTiers(insights);
+            _mpRenderRanking(insights);
+            _mpRenderConquistas(insights);
+            _mpRenderDesbloqueie(insights);
+            _mpRenderMomentum(insights);
+            _mpRenderStreak(insights);
+            _mpRenderTierProgress(insights);
+            _mpRenderFinanceiro(insights);
+            _mpRenderTimeline(insights);
+        }
+        _mpRenderPixDia(insights);
+        _mpRenderCalendar(insights);
+        _mpRenderHistorico([]);
+
+        api(`/api/minha-performance/historico${qs}`)
+            .then(r => r.json())
+            .then(hist => _mpRenderHistorico(hist?.historico || []))
+            .catch(e => console.warn('historico MP', e));
+
+    } catch(e) {
+        console.error('loadMinhaPerformance', e);
+        if (loading) loading.classList.add('hidden');
+        if (noCamp) { noCamp.classList.remove('hidden'); noCamp.querySelector('p').textContent = 'Erro ao carregar dados.'; }
+    } finally {
+        if (typeof _dismissBootSplash === 'function') _dismissBootSplash();
+    }
+}
+
+/* ── Admin ── */
+async function _mpLoadAgentSelector() {
+    const sel = document.getElementById('mp-agent-select');
+    if (!sel) return;
+    try {
+        const res = await api('/api/minha-performance/agentes');
+        const d = await res.json();
+        const agents = d?.agentes || [];
+        const suporteSet = new Set((d?.suporte_uids || []).map(Number));
+        const suporteAgents = agents.filter(a => suporteSet.has(Number(a.kommo_uid)));
+        const outros = agents.filter(a => !suporteSet.has(Number(a.kommo_uid)));
+        let html = '<option value="suporte_equipe">★ Equipe Suporte Comercial</option>';
+        if (suporteAgents.length) {
+            html += '<option disabled>— Suporte (individual) —</option>';
+            html += suporteAgents.map(a => `<option value="${a.kommo_uid}">${a.name}</option>`).join('');
+        }
+        if (outros.length) {
+            html += '<option disabled>— Demais agentes —</option>';
+            html += outros.map(a => `<option value="${a.kommo_uid}">${a.name}</option>`).join('');
+        }
+        sel.innerHTML = html;
+        if (!_mpSelectedUid && !_mpAgentsLoaded) _mpSelectedUid = 'suporte_equipe';
+        if (_mpSelectedUid) sel.value = String(_mpSelectedUid);
+        _mpAgentsLoaded = true;
+    } catch(e) { console.error('_mpLoadAgentSelector', e); }
+}
+
+function _mpUpdateAdminViewingState(effectiveUid) {
+    const backBtn = document.getElementById('mp-admin-back');
+    const viewing = document.getElementById('mp-admin-viewing');
+    const sel = document.getElementById('mp-agent-select');
+    if (!_mpCanManagePremiacao) return;
+    const isViewingAgent = effectiveUid && effectiveUid !== _mpMyUid;
+    if (backBtn) backBtn.classList.toggle('hidden', !_mpSuporteEquipe && !isViewingAgent);
+    if (sel && _mpSelectedUid) sel.value = String(_mpSelectedUid);
+    if (viewing) {
+        if (_mpSuporteEquipe) {
+            viewing.textContent = 'Painel: Equipe Suporte Comercial';
+            viewing.classList.remove('hidden');
+        } else if (isViewingAgent) {
+            const opt = sel?.querySelector(`option[value="${effectiveUid}"]`);
+            viewing.textContent = opt ? `Visualizando: ${opt.textContent}` : `Visualizando: ID ${effectiveUid}`;
+            viewing.classList.remove('hidden');
+        } else {
+            viewing.classList.add('hidden');
+        }
+    }
+}
+
+function mpAdminSelectAgent() {
+    const sel = document.getElementById('mp-agent-select');
+    const val = sel?.value || '';
+    _mpSelectedUid = val === 'suporte_equipe' ? 'suporte_equipe' : (val ? Number(val) : null);
+    loadMinhaPerformance();
+}
+
+function mpAdminBackToSelf() {
+    _mpSelectedUid = _mpCanManagePremiacao ? 'suporte_equipe' : null;
+    const sel = document.getElementById('mp-agent-select');
+    if (sel) sel.value = _mpCanManagePremiacao ? 'suporte_equipe' : '';
+    loadMinhaPerformance();
+}
+
+/* ── Seletor de campanha ── */
+async function _mpLoadCampanhasSelector() {
+    const sel = document.getElementById('mp-campanha-select');
+    const status = document.getElementById('mp-campanha-bar-status');
+    if (!sel) return;
+    try {
+        const res = await api('/api/minha-performance/campanhas');
+        const d = await res.json();
+        if (!d?.ok) throw new Error(d?.error || 'erro');
+        const lista = d.campanhas || [];
+        if (!lista.length) {
+            sel.innerHTML = '<option value="">Nenhuma campanha cadastrada</option>';
+            sel.disabled = true;
+            return;
+        }
+        sel.innerHTML = lista.map(c => {
+            const tag = c.is_active ? '🟢 ' : '';
+            const periodo = `${_mpFmtDate(c.dt_inicio)} – ${_mpFmtDate(c.dt_fim)}`;
+            return `<option value="${c.id}">${tag}${c.nome} · ${periodo}</option>`;
+        }).join('');
+        sel.disabled = false;
+        if (!_mpSelectedCampanhaId) {
+            _mpSelectedCampanhaId = d.default_id || lista[0].id;
+        }
+        sel.value = String(_mpSelectedCampanhaId);
+        if (status) {
+            const cur = lista.find(c => c.id === _mpSelectedCampanhaId);
+            status.textContent = cur ? (cur.is_active ? 'Ativa' : 'Histórica') : '';
+        }
+        _mpCampanhasLoaded = true;
+    } catch (e) {
+        console.error('_mpLoadCampanhasSelector', e);
+        sel.innerHTML = '<option value="">Erro ao carregar campanhas</option>';
+    }
+}
+
+function mpSelectCampanha() {
+    const sel = document.getElementById('mp-campanha-select');
+    if (!sel) return;
+    const id = sel.value ? Number(sel.value) : null;
+    if (id === _mpSelectedCampanhaId) return;
+    _mpSelectedCampanhaId = id;
+    const agentSel = document.getElementById('mp-agent-select');
+    if (agentSel?.value) {
+        _mpSelectedUid = agentSel.value === 'suporte_equipe' ? 'suporte_equipe' : Number(agentSel.value);
+    }
+    loadMinhaPerformance();
+}
+
+
+/* ═══ Vendas Comercial (mesmo total do Dashboard Comercial) ═══ */
+function _mpPickLatestMetaPeriod(periods) {
+    const uniq = new Map();
+    for (const p of periods) {
+        if (!p?.dt_inicio || !p?.dt_fim) continue;
+        const di = String(p.dt_inicio).trim().substring(0, 10);
+        const df = String(p.dt_fim).trim().substring(0, 10);
+        if (!di || !df) continue;
+        const k = `${di}|${df}`;
+        if (!uniq.has(k)) uniq.set(k, { dt_inicio: di, dt_fim: df });
+    }
+    const arr = Array.from(uniq.values());
+    arr.sort((a, b) => {
+        if (a.dt_inicio !== b.dt_inicio) return a.dt_inicio < b.dt_inicio ? 1 : -1;
+        return a.dt_fim < b.dt_fim ? 1 : a.dt_fim > b.dt_fim ? -1 : 0;
+    });
+    return arr[0] || null;
+}
+
+async function _mpMergeComercialVendas(d) {
+    const c = d.campanha;
+    if (!c) return;
+    let di = String(c.dt_inicio || '').slice(0, 10);
+    let df = String(c.dt_fim || '').slice(0, 10);
+    if (!di || !df) return;
+
+    const apply = (cr) => {
+        if (!cr?.ok || !cr.kpis) return false;
+        const total = cr.kpis.vendas ?? 0;
+        d.total_matriculas_time = total;
+        d.media_vendas = cr.kpis.media_diaria ?? 0;
+        d.pace_atual = d.media_vendas;
+        d.chart_matriculas_dia = (cr.evolucao || []).map(e => ({
+            data: e.data,
+            matriculas: e.count ?? 0,
+        }));
+        if (d.meta_equipe_suporte) {
+            const eq = d.meta_equipe_suporte;
+            const meta = eq.meta || 0;
+            eq.total_matriculas = total;
+            eq.pct = meta > 0 ? Math.round(total / meta * 1000) / 10 : 0;
+            eq.meta_batida = meta > 0 && total >= meta;
+            eq.matriculas_fonte = 'comercial';
+        }
+        return total > 0;
+    };
+
+    try {
+        let res = await api(`/api/comercial-rgm/data?dt_ini=${encodeURIComponent(di)}&dt_fim=${encodeURIComponent(df)}`);
+        let cr = await res.json();
+        if (apply(cr)) return;
+
+        const periods = [{ dt_inicio: di, dt_fim: df }];
+        try {
+            const rm = await api('/api/comercial-rgm/metas?categoria=matriculas');
+            const md = await rm.json();
+            if (md.ok && md.metas?.length) {
+                for (const m of md.metas) {
+                    if (m.dt_inicio && m.dt_fim) periods.push(m);
+                }
+            }
+        } catch (_) {}
+        try {
+            const rc = await api('/api/premiacao/campanhas-periodos');
+            const dc = await rc.json();
+            if (dc.ok && dc.campanhas?.length) {
+                for (const x of dc.campanhas) {
+                    if (x.dt_inicio && x.dt_fim) periods.push(x);
+                }
+            }
+        } catch (_) {}
+        const ultima = _mpPickLatestMetaPeriod(periods);
+        if (ultima && (ultima.dt_inicio !== di || ultima.dt_fim !== df)) {
+            di = ultima.dt_inicio;
+            df = ultima.dt_fim;
+            res = await api(`/api/comercial-rgm/data?dt_ini=${encodeURIComponent(di)}&dt_fim=${encodeURIComponent(df)}`);
+            cr = await res.json();
+            apply(cr);
+        }
+    } catch (e) {
+        console.warn('_mpMergeComercialVendas', e);
+    }
+}
+
+/* ═══ Layout Suporte Comercial ═══ */
+function _mpApplySuporteLayout(d) {
+    const isSuporte = !!(
+        _mpSuporteEquipe ||
+        d.painel_suporte ||
+        d.suporte_equipe_view ||
+        d.meta_equipe_suporte?.is_suporte
+    );
+    const painel = document.getElementById('mp-suporte-painel');
+    const heroWrap = document.getElementById('mp-hero-wrap');
+    document.querySelectorAll('.mp-agent-only').forEach(el => {
+        el.classList.toggle('hidden', isSuporte);
+    });
+    if (heroWrap) heroWrap.classList.toggle('hidden', isSuporte);
+    if (painel) painel.classList.toggle('hidden', !isSuporte);
+    if (isSuporte) _mpRenderSuportePainel(d);
+    else if (painel) painel.classList.add('hidden');
+}
+
+function _mpRenderSuportePainel(d) {
+    _mpRenderEquipeSuporte(d, true);
+    const eq = d.meta_equipe_suporte;
+    const badge = document.getElementById('mp-suporte-agentes-badge');
+    if (badge) {
+        badge.textContent = eq?.matriculas_fonte === 'comercial'
+            ? 'Comercial inteiro'
+            : (eq ? `${eq.agentes_count || 0} no time` : '');
+    }
+    const totalMat = d.total_matriculas_time ?? eq?.total_matriculas ?? 0;
+    const media = d.media_vendas ?? d.pace_atual ?? 0;
+    const matKpi = document.getElementById('mp-suporte-kpi-mat');
+    const mediaKpi = document.getElementById('mp-suporte-kpi-media');
+    if (matKpi) matKpi.textContent = _mpFmtN(totalMat);
+    if (mediaKpi) mediaKpi.textContent = Number(media).toFixed(1);
+    _mpRenderSuporteMatChart(d.chart_matriculas_dia || []);
+}
+
+function _mpRenderSuporteMatChart(series) {
+    const el = document.getElementById('mp-suporte-mat-chart');
+    if (!el || typeof ApexCharts === 'undefined') return;
+    if (_mpCharts.suporteMat) {
+        try { _mpCharts.suporteMat.destroy(); } catch (e) {}
+        delete _mpCharts.suporteMat;
+    }
+    if (!series.length) {
+        el.innerHTML = '<p class="text-xs text-slate-500 text-center py-12">Sem matrículas no período</p>';
+        return;
+    }
+    const labels = series.map(p => {
+        const parts = String(p.data || '').split('-');
+        return parts.length === 3 ? `${parts[2]}/${parts[1]}` : p.data;
+    });
+    const data = series.map(p => p.matriculas || 0);
+    const chart = new ApexCharts(el, {
+        chart: {
+            type: 'area',
+            height: 300,
+            background: 'transparent',
+            toolbar: { show: false },
+            animations: { enabled: true, speed: 900 },
+            fontFamily: 'Inter, sans-serif',
+        },
+        series: [{ name: 'Em curso', data }],
+        colors: ['#3b82f6'],
+        stroke: { width: 3, curve: 'smooth' },
+        fill: {
+            type: 'gradient',
+            gradient: { shadeIntensity: 1, opacityFrom: 0.5, opacityTo: 0.06 },
+        },
+        dataLabels: { enabled: false },
+        xaxis: {
+            categories: labels,
+            labels: { style: { colors: '#64748b', fontSize: '10px' }, rotate: labels.length > 8 ? -45 : 0 },
+        },
+        yaxis: { labels: { style: { colors: '#64748b', fontSize: '10px' } }, min: 0 },
+        grid: { borderColor: 'rgba(148,163,184,.08)', strokeDashArray: 4 },
+        tooltip: { theme: 'dark' },
+        legend: { show: true, labels: { colors: '#94a3b8' }, fontSize: '11px' },
+    });
+    chart.render();
+    _mpCharts.suporteMat = chart;
+}
+
+/* ═══ Meta unificada Suporte ═══ */
+function _mpRenderEquipeSuporte(d, insidePainel = false) {
+    const wrap = document.getElementById('mp-equipe-suporte');
+    const body = document.getElementById('mp-equipe-suporte-body');
+    const eq = d.meta_equipe_suporte;
+    if (!wrap || !body) return;
+    if (!eq || !(eq.meta > 0)) {
+        if (!insidePainel) wrap.classList.add('hidden');
+        const cid = d.campanha?.id || _mpSelectedCampanhaId || '';
+        body.innerHTML = `<p class="text-xs text-slate-500">Nenhuma meta do time para esta campanha.<br>Configure em <strong>Premiação</strong> → Suporte Comercial (campanha #${cid || '…'}).</p>`;
+        return;
+    }
+    if (!insidePainel) wrap.classList.remove('hidden');
+    const total = eq.total_matriculas || 0;
+    const meta = eq.meta || 0;
+    const pct = eq.pct ?? (meta > 0 ? Math.min(100, Math.round(total / meta * 100)) : 0);
+    const bateu = eq.meta_batida ?? (total >= meta);
+    body.innerHTML = `
+        <div class="flex flex-wrap items-center gap-2 mb-3">
+            <span class="px-2 py-0.5 text-[10px] font-bold rounded-full ${bateu ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-violet-500/20 text-violet-300 border border-violet-500/30'}">
+                ${bateu ? 'META BATIDA' : 'EM ANDAMENTO'}
+            </span>
+            ${eq.matriculas_fonte === 'comercial'
+                ? '<span class="text-xs text-slate-500">Comercial inteiro</span>'
+                : `<span class="text-xs text-slate-500">${eq.agentes_count || 0} no time</span>`}
+        </div>
+        <div class="flex justify-between text-[10px] text-slate-500 mb-0.5">
+            <span>Meta do time</span>
+            <span class="tabular-nums font-semibold text-blue-400">${total}/${meta} (${pct}%)</span>
+        </div>
+        <div class="h-2.5 rounded-full bg-slate-200 dark:bg-slate-700/40 overflow-hidden">
+            <div class="h-full rounded-full transition-all bg-blue-500" style="width:${pct}%"></div>
+        </div>
+        <p class="text-[10px] text-slate-500 pt-2">${eq.matriculas_fonte === 'comercial' ? 'Matrículas em curso de todo o Comercial, alinhadas ao Dashboard Comercial.' : (eq.is_suporte ? 'Soma de todo o Suporte Comercial no período.' : 'Visão do time de suporte.')}</p>
+    `;
+}
+
+/* ═══ S1: Hero + Gauge ═══ */
+function _mpRenderHero(d) {
+    const hero = document.getElementById('mp-hero');
+    const prem = d.premiacao || {};
+    const total = prem.total || 0;
+    const tier = d.tier;
+    const metas = d.metas || {};
+    const totalMat = d.total_matriculas || 0;
+
+    if (hero) {
+        hero.className = hero.className.replace(/mp-tier-\w+/g, '');
+        if (tier === 'supermeta')      hero.classList.add('mp-tier-gold');
+        else if (tier === 'meta')      hero.classList.add('mp-tier-silver');
+        else if (tier === 'intermediaria') hero.classList.add('mp-tier-bronze');
+        else                           hero.classList.add('mp-tier-base');
+    }
+
+    const el = id => document.getElementById(id);
+    el('mp-hero-campanha').textContent = d.campanha?.nome || '';
+
+    const banner = document.getElementById('mp-campanha-encerrada');
+    if (banner) {
+        if (d.campanha && d.campanha.is_active === false) {
+            const nomeEl = document.getElementById('mp-campanha-encerrada-nome');
+            if (nomeEl) nomeEl.textContent = d.campanha.nome || '—';
+            banner.classList.remove('hidden');
+        } else {
+            banner.classList.add('hidden');
+        }
+    }
+
+    _mpCountUp('mp-hero-saldo', total, { prefix: 'R$ ', decimalPlaces: 2, formattedValue: _mpFmt(total) });
+
+    const maxPotencial = _mpCalcMaxPotencial(d);
+    const potWrap = el('mp-hero-potencial-wrap');
+    if (maxPotencial > total && potWrap) {
+        potWrap.classList.remove('hidden');
+        el('mp-hero-potencial').textContent = _mpFmt(maxPotencial);
+    } else if (potWrap) {
+        potWrap.classList.add('hidden');
+    }
+
+    const tierLabels = { base: 'Base', intermediaria: 'Intermediária', meta: 'Meta', supermeta: 'Supermeta' };
+    const badge = el('mp-hero-tier-badge');
+    badge.textContent = (tierLabels[tier] || tier || 'Base').toUpperCase();
+    badge.className = 'px-4 py-1.5 text-xs font-black rounded-full tracking-wide ';
+    if (tier === 'supermeta')      badge.className += 'bg-amber-400/25 text-amber-200 border border-amber-400/40';
+    else if (tier === 'meta')      badge.className += 'bg-blue-400/25 text-blue-200 border border-blue-400/40';
+    else if (tier === 'intermediaria') badge.className += 'bg-orange-400/25 text-orange-200 border border-orange-400/40';
+    else                           badge.className += 'bg-emerald-400/20 text-emerald-300 border border-emerald-400/30';
+
+    el('mp-hero-mat').textContent = `${totalMat} matrículas`;
+    el('mp-hero-dias').textContent = `${d.dias_restantes || 0} dias restantes`;
+
+    const msgEl = el('mp-hero-msg');
+    if (msgEl) msgEl.innerHTML = d.mensagem || '';
+
+    // ApexCharts semi-circle gauge
+    const sup = metas.supermeta || metas.meta || metas.intermediaria || 1;
+    const pct = Math.min(Math.round((totalMat / sup) * 100), 100);
+
+    const gaugeColors = {
+        base:          ['#10b981'],
+        intermediaria: ['#f97316'],
+        meta:          ['#3b82f6'],
+        supermeta:     ['#f59e0b'],
+    };
+
+    const gaugeEl = document.getElementById('mp-hero-gauge');
+    if (gaugeEl && typeof ApexCharts !== 'undefined') {
+        const chart = new ApexCharts(gaugeEl, {
+            chart: { type: 'radialBar', height: 220, background: 'transparent', animations: { enabled: true, speed: 1200 } },
+            series: [pct],
+            colors: gaugeColors[tier] || gaugeColors.base,
+            plotOptions: {
+                radialBar: {
+                    startAngle: -135,
+                    endAngle: 135,
+                    hollow: { size: '62%', background: 'transparent' },
+                    track: { background: 'rgba(255,255,255,.06)', strokeWidth: '100%' },
+                    dataLabels: {
+                        name: { show: true, fontSize: '11px', color: 'rgba(255,255,255,.5)', offsetY: -12, formatter: () => `${totalMat} / ${sup}` },
+                        value: { show: true, fontSize: '32px', fontWeight: 800, color: '#fff', offsetY: 4, formatter: () => `${pct}%` }
+                    }
+                }
+            },
+            fill: {
+                type: 'gradient',
+                gradient: { shade: 'dark', shadeIntensity: .15, gradientToColors: ['#10b981'], stops: [0, 100] }
+            },
+            stroke: { lineCap: 'round' },
+        });
+        chart.render();
+        _mpCharts.heroGauge = chart;
+    }
+}
+
+function _mpCalcMaxPotencial(d) {
+    const prem = d.premiacao || {};
+    const desb = prem.desbloqueie || [];
+    if (!desb.length) return prem.total || 0;
+    const maxTier = desb.reduce((max, t) => Math.max(max, t.ganho_total), 0);
+    return maxTier + (prem.daily_bonus || 0) + (prem.receb_bonus || 0);
+}
+
+
+/* ═══ PIX do Dia ═══ */
+function _mpRenderPixDia(d) {
+    const pixFila = !!(d.pix_suporte_equipe && d.pix_fonte_fila);
+    const teamPixNote = pixFila
+        ? '<p class="text-[10px] text-violet-400/90 mb-1.5 font-medium">PIX do time: <strong>fila de aceite</strong> agora (todos os consultores no Kommo)</p>'
+        : (d.pix_suporte_equipe
+            ? '<p class="text-[10px] text-violet-400/90 mb-1.5 font-medium">PIX do time Suporte</p>'
+            : '');
+    const hoje = d.hoje || {};
+    const meta = hoje.meta || 0;
+    const realizadasHoje = pixFila ? (hoje.aceites_fila ?? hoje.realizadas ?? 0) : (hoje.realizadas || 0);
+    const aceitesFila = hoje.aceites_fila || 0;
+    const aceitesHoje = hoje.aceites_hoje || 0;
+    const fixo = hoje.bonus_fixo || 0;
+    const extra = hoje.bonus_extra || 0;
+    const pct = meta > 0 ? Math.min(Math.round((realizadasHoje / meta) * 100), 100) : 0;
+    const metaBatida = realizadasHoje >= meta && meta > 0;
+
+    // ApexCharts radialBar
+    const chartEl = document.getElementById('mp-pix-chart');
+    if (chartEl && typeof ApexCharts !== 'undefined') {
+        const ringColor = metaBatida ? '#10b981' : '#06b6d4';
+        const chart = new ApexCharts(chartEl, {
+            chart: { type: 'radialBar', height: 175, width: 175, background: 'transparent', animations: { enabled: true, speed: 1000 } },
+            series: [pct],
+            colors: [ringColor],
+            plotOptions: {
+                radialBar: {
+                    hollow: { size: '58%', background: 'transparent' },
+                    track: { background: 'rgba(255,255,255,.06)', strokeWidth: '100%' },
+                    dataLabels: {
+                        name: { show: true, fontSize: '11px', color: 'rgba(255,255,255,.45)', offsetY: -8, formatter: () => meta > 0 ? `de ${meta}` : 'sem meta' },
+                        value: { show: true, fontSize: '36px', fontWeight: 900, color: '#fff', offsetY: 6, formatter: () => `${realizadasHoje}` }
+                    }
+                }
+            },
+            fill: {
+                type: 'gradient',
+                gradient: { shade: 'dark', shadeIntensity: .2, gradientToColors: [metaBatida ? '#34d399' : '#22d3ee'], stops: [0, 100] }
+            },
+            stroke: { lineCap: 'round' },
+        });
+        chart.render();
+        _mpCharts.pixRing = chart;
+    }
+
+    const status = document.getElementById('mp-pix-status');
+    const detail = document.getElementById('mp-pix-detail');
+    const valor = document.getElementById('mp-pix-valor');
+    const aceitesBadge = document.getElementById('mp-aceites-badge');
+
+    if (aceitesBadge) {
+        if (aceitesFila > 0) {
+            aceitesBadge.classList.remove('hidden');
+            aceitesBadge.innerHTML = `
+                <span class="material-symbols-outlined text-sm text-purple-400">pending</span>
+                <span class="text-[10px] text-purple-300 font-medium">${aceitesFila} aceite${aceitesFila > 1 ? 's' : ''} na fila total</span>
+            `;
+        } else {
+            aceitesBadge.classList.add('hidden');
+        }
+    }
+
+    const ontemRealizadas = hoje.ontem_realizadas || 0;
+    let yesterdayHtml = '';
+    if (realizadasHoje > ontemRealizadas && ontemRealizadas >= 0) {
+        yesterdayHtml = `<p class="text-[10px] text-emerald-400 font-semibold mt-1">📈 +${realizadasHoje - ontemRealizadas} a mais que ontem — continue assim!</p>`;
+    } else if (realizadasHoje === ontemRealizadas && realizadasHoje > 0) {
+        yesterdayHtml = `<p class="text-[10px] text-amber-400 font-semibold mt-1">⚡ Mesmo ritmo de ontem — hora de ultrapassar!</p>`;
+    } else if (realizadasHoje < ontemRealizadas && ontemRealizadas > 0) {
+        yesterdayHtml = `<p class="text-[10px] text-orange-400 font-semibold mt-1">🔥 Ontem você fez ${ontemRealizadas} — bora superar!</p>`;
+    }
+
+    if (meta <= 0) {
+        if (status) status.textContent = 'Sem meta diária hoje';
+        let noMetaMsg = realizadasHoje > 0
+            ? `Você já fez ${realizadasHoje} hoje mesmo sem meta!`
+            : 'Nenhuma meta PIX configurada para hoje.';
+        if (aceitesFila > 0) noMetaMsg += ` (${aceitesFila} aceite${aceitesFila > 1 ? 's' : ''} na fila total)`;
+        if (detail) detail.innerHTML = teamPixNote + noMetaMsg + yesterdayHtml;
+        if (valor) valor.textContent = '';
+        return;
+    }
+
+    if (metaBatida) {
+        const excedente = Math.max(0, realizadasHoje - meta);
+        const ganho = fixo + extra * excedente;
+        if (status) { status.textContent = '🎉 PIX Garantido!'; status.className = 'text-lg font-black text-emerald-400 mb-1'; }
+        let msgParts = pixFila
+            ? `Na fila agora: ${realizadasHoje} aceite${realizadasHoje !== 1 ? 's' : ''}`
+            : (d.pix_suporte_equipe
+                ? `Hoje: ${realizadasHoje} (matrículas do dia)`
+                : `Hoje: ${realizadasHoje} (mat + aceites do dia)`);
+        if (excedente > 0) {
+            msgParts += ` · +${excedente} extra × ${_mpFmt(extra)} cada`;
+        } else {
+            msgParts += ' — meta batida!';
+        }
+        if (detail) detail.innerHTML = teamPixNote + msgParts + yesterdayHtml;
+
+        _mpCountUp('mp-pix-valor', ganho, { prefix: 'R$ ', decimalPlaces: 2, duration: 2.2, formattedValue: _mpFmt(ganho) });
+
+        if (typeof confetti === 'function') {
+            setTimeout(() => {
+                confetti({ particleCount: 80, spread: 70, origin: { y: .7 }, colors: ['#10b981','#34d399','#6ee7b7','#fbbf24','#f59e0b'] });
+            }, 600);
+        }
+    } else {
+        const falta = meta - realizadasHoje;
+        if (status) { status.textContent = `Faltam ${falta} para o PIX!`; status.className = 'text-lg font-black text-cyan-300 mb-1'; }
+        const hojeLbl = pixFila ? 'na fila de aceite' : (d.painel_suporte ? 'matrículas (data mat.)' : 'mat + aceites do dia');
+        if (detail) detail.innerHTML = teamPixNote + `Hoje: ${realizadasHoje}/${meta} (${hojeLbl})` + yesterdayHtml;
+        if (valor) valor.textContent = `Prêmio: ${_mpFmt(fixo)}`;
+    }
+}
+
+
+/* ═══ Ranking ═══ */
+function _mpRenderRanking(d) {
+    const card = document.getElementById('mp-ranking-card');
+    const content = document.getElementById('mp-ranking-content');
+    if (!card || !content) return;
+    const rk = d.ranking;
+    if (!rk || !rk.total_agentes) { card.classList.add('hidden'); return; }
+    card.classList.remove('hidden');
+
+    const pos = rk.posicao;
+    const total = rk.total_agentes;
+    const diff = rk.diferenca_lider;
+    const myMat = rk.minhas_mat || 0;
+    const myAce = rk.meus_aceites || 0;
+    const myTotal = rk.meu_total || (myMat + myAce);
+    const media = rk.media_time || 0;
+
+    const medalCfg = {
+        1: { icon: 'emoji_events', gradient: 'from-amber-500/30 to-amber-900/10', border: 'border-amber-400/50', iconColor: 'text-amber-400', label: '🏆 Você lidera o ranking!', labelColor: 'text-amber-400' },
+        2: { icon: 'workspace_premium', gradient: 'from-slate-300/20 to-slate-700/10', border: 'border-slate-300/40', iconColor: 'text-slate-200', label: '🥈 Vice-líder!', labelColor: 'text-slate-300' },
+        3: { icon: 'workspace_premium', gradient: 'from-orange-500/25 to-orange-900/10', border: 'border-orange-400/40', iconColor: 'text-orange-400', label: '🥉 Top 3! Pódio!', labelColor: 'text-orange-400' },
+    };
+    const m = medalCfg[pos];
+
+    let motivacao = '';
+    if (pos === 1) motivacao = '<p class="text-xs text-amber-300/80 mt-2">Ninguém te alcançou! Continue dominando! 🔥</p>';
+    else if (diff > 0 && diff <= 3) motivacao = `<p class="text-xs text-cyan-400 font-semibold mt-2">🔥 Quase lá! Só <strong>${diff}</strong> para o topo!</p>`;
+    else if (diff > 0 && diff <= 10) motivacao = `<p class="text-xs text-slate-400 mt-2">Faltam <strong>${diff}</strong> para o 1°. Cada matrícula conta! 💪</p>`;
+    else if (diff > 0) motivacao = `<p class="text-xs text-slate-500 mt-2">${diff} atrás do líder — foco e consistência! 🚀</p>`;
+
+    const scoreDetail = `<p class="text-[10px] text-slate-500 mt-1">${myMat} mat${myAce > 0 ? ' + ' + myAce + ' aceite' + (myAce > 1 ? 's' : '') : ''}</p>`;
+
+    let mediaHtml = '';
+    if (media > 0) {
+        const diffMedia = myTotal - media;
+        const absDiff = Math.abs(diffMedia).toFixed(1);
+        if (diffMedia > 1) {
+            mediaHtml = `
+                <div class="mt-3 p-2.5 rounded-lg bg-emerald-100 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/15">
+                    <p class="text-[10px] text-slate-600 dark:text-slate-400">Média do time: <strong class="text-[var(--text-primary)]">${media}</strong></p>
+                    <p class="text-xs text-emerald-400 font-semibold mt-0.5">📈 Você está ${absDiff} acima da média! Continue assim!</p>
+                </div>`;
+        } else if (diffMedia >= -1) {
+            mediaHtml = `
+                <div class="mt-3 p-2.5 rounded-lg bg-amber-100 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/15">
+                    <p class="text-[10px] text-slate-600 dark:text-slate-400">Média do time: <strong class="text-[var(--text-primary)]">${media}</strong></p>
+                    <p class="text-xs text-amber-400 font-semibold mt-0.5">⚡ Você está na média do time — dá pra mais!</p>
+                </div>`;
+        } else {
+            mediaHtml = `
+                <div class="mt-3 p-2.5 rounded-lg bg-orange-100 dark:bg-orange-500/10 border border-orange-200 dark:border-orange-500/15">
+                    <p class="text-[10px] text-slate-600 dark:text-slate-400">Média do time: <strong class="text-[var(--text-primary)]">${media}</strong></p>
+                    <p class="text-xs text-orange-400 font-semibold mt-0.5">🔥 Você está ${absDiff} abaixo da média — bora reverter esse jogo!</p>
+                </div>`;
+        }
+    }
+
+    content.innerHTML = `
+        <div class="flex items-center gap-5">
+            <div class="w-20 h-20 rounded-2xl flex items-center justify-center border-2 bg-gradient-to-br ${m ? m.gradient + ' ' + m.border : 'from-slate-700/40 to-slate-800/40 border-slate-600/30'} shadow-lg">
+                ${m ? `<span class="material-symbols-outlined text-4xl ${m.iconColor}">${m.icon}</span>`
+                    : `<span class="text-3xl font-black text-slate-700 dark:text-slate-300">${pos}°</span>`}
+            </div>
+            <div class="flex-1">
+                <p class="text-3xl font-black text-[var(--text-primary)] mp-stat-value">${pos}°</p>
+                <p class="text-sm text-slate-500">de ${total}</p>
+                ${scoreDetail}
+                ${m ? `<p class="text-xs font-bold ${m.labelColor} mt-1">${m.label}</p>` : ''}
+                ${motivacao}
+            </div>
+        </div>
+        ${mediaHtml}`;
+}
+
+
+/* ═══ Conquistas ═══ */
+function _mpRenderConquistas(d) {
+    const card = document.getElementById('mp-conquistas-card');
+    const grid = document.getElementById('mp-conquistas-grid');
+    if (!card || !grid) return;
+
+    const achieved = d.conquistas || [];
+    if (!achieved.length) {
+        card.classList.remove('hidden');
+        grid.innerHTML = `
+            <div class="w-full text-center py-6">
+                <span class="material-symbols-outlined text-4xl text-emerald-600/40 mb-2">rocket_launch</span>
+                <p class="text-sm text-slate-400 font-semibold">Suas conquistas aparecem aqui! 🚀</p>
+                <p class="text-[10px] text-slate-600 mt-1">Faça matrículas, bata metas e suba no ranking.</p>
+            </div>`;
+        return;
+    }
+    card.classList.remove('hidden');
+
+    const colorMap = {
+        primeira_mat:   { bg: '#065f46', border: '#10b981', icon: '#6ee7b7', glow: '#10b981' },
+        streak_3:       { bg: '#78350f', border: '#f59e0b', icon: '#fcd34d', glow: '#f59e0b' },
+        streak_5:       { bg: '#7c2d12', border: '#f97316', icon: '#fdba74', glow: '#f97316' },
+        streak_7:       { bg: '#7f1d1d', border: '#ef4444', icon: '#fca5a5', glow: '#ef4444' },
+        meta_batida:    { bg: '#1e3a5f', border: '#3b82f6', icon: '#93c5fd', glow: '#3b82f6' },
+        supermeta:      { bg: '#713f12', border: '#eab308', icon: '#fef08a', glow: '#eab308' },
+        meta_antecipada:{ bg: '#164e63', border: '#06b6d4', icon: '#67e8f9', glow: '#06b6d4' },
+        melhor_dia:     { bg: '#831843', border: '#ec4899', icon: '#f9a8d4', glow: '#ec4899' },
+        top_3:          { bg: '#451a03', border: '#d97706', icon: '#fbbf24', glow: '#d97706' },
+    };
+    const defaultColor = { bg: '#4a1d96', border: '#a855f7', icon: '#d8b4fe', glow: '#a855f7' };
+
+    grid.innerHTML = achieved.map((a, i) => {
+        const c = colorMap[a.id] || defaultColor;
+        return `<div class="flex flex-col items-center gap-2 p-3 rounded-xl w-[88px] border-2 shadow-lg transition-all hover:scale-110 cursor-default mp-enter" style="background:${c.bg};border-color:${c.border};box-shadow:0 0 18px ${c.glow}44,0 4px 12px rgba(0,0,0,.3);animation-delay:${i*.08}s" title="${a.desc || a.nome}">
+            <span class="material-symbols-outlined text-3xl" style="color:${c.icon};filter:drop-shadow(0 0 8px ${c.glow})">${a.icone}</span>
+            <span class="text-[9px] text-center leading-tight font-bold" style="color:${c.icon}">${a.nome}</span>
+        </div>`;
+    }).join('');
+}
+
+
+/* ═══ Desbloqueie Mais ═══ */
+function _mpRenderDesbloqueie(d) {
+    const wrap = document.getElementById('mp-desbloqueie');
+    const wrapOuter = document.getElementById('mp-desbloqueie-wrap');
+    if (!wrap) return;
+    const desb = d.premiacao?.desbloqueie || [];
+    if (!desb.length || desb.every(t => t.atingido)) { if (wrapOuter) wrapOuter.classList.add('hidden'); return; }
+    if (wrapOuter) wrapOuter.classList.remove('hidden');
+
+    const tierLabels = { intermediaria: 'Intermediária', meta: 'Meta', supermeta: 'Supermeta' };
+    const tierColors = {
+        intermediaria: { border: 'border-orange-500/25', text: 'text-orange-400', glow: 'shadow-orange-500/10' },
+        meta:          { border: 'border-blue-500/25', text: 'text-blue-400', glow: 'shadow-blue-500/10' },
+        supermeta:     { border: 'border-amber-500/25', text: 'text-amber-400', glow: 'shadow-amber-500/10' },
+    };
+    const proximoNaoAtingido = desb.find(t => !t.atingido);
+
+    wrap.innerHTML = desb.filter(t => !t.atingido).map(t => {
+        const c = tierColors[t.tier] || tierColors.meta;
+        const isProximo = t === proximoNaoAtingido;
+        return `<div class="mp-card p-4 ${c.border} ${isProximo ? 'mp-pulse' : ''} ${c.glow} relative overflow-hidden">
+            ${isProximo ? '<div class="absolute top-0 right-0 px-2 py-0.5 text-[9px] font-bold bg-emerald-500/20 text-emerald-400 rounded-bl-lg">PRÓXIMO</div>' : ''}
+            <p class="text-[10px] ${c.text} uppercase font-bold tracking-wider mb-1">${tierLabels[t.tier]}</p>
+            <p class="text-2xl font-black text-[var(--text-primary)] mb-1">+${_mpFmt(t.ganho_adicional)}</p>
+            <p class="text-xs text-slate-600 dark:text-slate-400">Faltam <span class="font-bold text-[var(--text-primary)]">${t.falta}</span> matrículas</p>
+            <p class="text-[10px] text-slate-600 mt-1">${_mpFmt(t.valor_por_mat)}/mat · Total: ${_mpFmt(t.ganho_total)}</p>
+        </div>`;
+    }).join('');
+}
+
+
+/* ═══ Momentum + Sparklines ═══ */
+function _mpRenderMomentum(d) {
+    const el = id => document.getElementById(id);
+
+    _mpCountUp('mp-pace', d.pace_atual || 0, { decimalPlaces: 1, formattedValue: (d.pace_atual||0).toFixed(1) });
+    _mpCountUp('mp-pace-needed', d.pace_meta > 900 ? 0 : (d.pace_meta || 0), {
+        decimalPlaces: 1,
+        formattedValue: d.pace_meta > 900 ? '--' : (d.pace_meta||0).toFixed(1)
+    });
+    _mpCountUp('mp-projecao-mat', d.projecao || 0, { suffix: ' mat', formattedValue: `${d.projecao||0} mat` });
+
+    const projTier = el('mp-projecao-tier');
+    const tierLabels = { base: 'Base', intermediaria: 'Intermediária', meta: 'Meta', supermeta: 'Supermeta' };
+    if (d.projecao_tier && d.projecao_tier !== 'base') {
+        projTier.textContent = tierLabels[d.projecao_tier] || d.projecao_tier;
+        projTier.className = 'text-[10px] text-emerald-400 font-semibold';
+    } else {
+        projTier.textContent = 'Abaixo da meta';
+        projTier.className = 'text-[10px] text-red-400';
+    }
+
+    _mpCountUp('mp-projecao-fin', d.projecao_financeira || 0, { prefix: 'R$ ', decimalPlaces: 2, formattedValue: _mpFmt(d.projecao_financeira || 0) });
+
+    // Sparklines from heatmap data
+    const heatmap = (d.heatmap || []).filter(h => h.status !== 'future' && h.realizadas != null);
+    const last7 = heatmap.slice(-7);
+    const sparkData = last7.map(h => h.realizadas || 0);
+    const metaData = last7.map(h => h.meta || 0);
+
+    if (sparkData.length >= 2) {
+        _mpSparkline('mp-spark-pace', sparkData, '#10b981');
+        _mpSparkline('mp-spark-needed', metaData, '#f59e0b');
+
+        let accum = [];
+        let sum = 0;
+        sparkData.forEach(v => { sum += v; accum.push(sum); });
+        _mpSparkline('mp-spark-proj', accum, '#3b82f6');
+
+        const finData = last7.map(h => {
+            const bd = (d.premiacao?.daily_breakdown || []).find(b => b.data === h.data);
+            return bd ? bd.total : 0;
+        });
+        _mpSparkline('mp-spark-fin', finData, '#10b981');
+    }
+}
+
+
+/* ═══ Streak + Heatmap ═══ */
+function _mpRenderStreak(d) {
+    const el = id => document.getElementById(id);
+    const seq = d.sequencia || 0;
+    const nivel = d.streak_nivel;
+    const streakNum = el('mp-streak-num');
+
+    if (streakNum) {
+        _mpCountUp('mp-streak-num', seq, { formattedValue: String(seq) });
+        if (nivel === 'imparavel')   streakNum.className = 'text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400 mp-stat-value';
+        else if (nivel === 'em_chamas') streakNum.className = 'text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-orange-400 to-red-500 mp-stat-value';
+        else if (nivel === 'aquecendo') streakNum.className = 'text-4xl font-black text-amber-400 mp-stat-value';
+        else streakNum.className = 'text-4xl font-black text-slate-400 mp-stat-value';
+    }
+
+    const nivelLabels = { aquecendo: 'Aquecendo!', em_chamas: 'Em Chamas!', imparavel: 'IMPARÁVEL!' };
+    const nivelIcons  = { aquecendo: 'local_fire_department', em_chamas: 'whatshot', imparavel: 'bolt' };
+
+    const streakLabel = el('mp-streak-label');
+    let labelText = seq > 0
+        ? `${seq} dia${seq > 1 ? 's' : ''} consecutivo${seq > 1 ? 's' : ''} batendo a meta diária`
+        : 'Inicie sua sequência hoje! (mat + aceites contam)';
+    if (nivel) labelText += ` — ${nivelLabels[nivel]}`;
+    if (streakLabel) streakLabel.textContent = labelText;
+
+    const nivelWrap = document.getElementById('mp-streak-nivel');
+    if (nivelWrap) {
+        if (nivel) {
+            nivelWrap.classList.remove('hidden');
+            const nColor = nivel === 'imparavel' ? 'text-purple-400' : nivel === 'em_chamas' ? 'text-orange-400' : 'text-amber-400';
+            nivelWrap.innerHTML = `
+                <span class="material-symbols-outlined text-sm ${nColor}">${nivelIcons[nivel]}</span>
+                <span class="text-[10px] font-bold ${nColor}">${nivelLabels[nivel]}</span>`;
+        } else {
+            nivelWrap.classList.add('hidden');
+        }
+    }
+
+    const heatmap = d.heatmap || [];
+    const wrap = document.getElementById('mp-heatmap');
+    if (!wrap || !heatmap.length) return;
+
+    const breakdown = (d.premiacao || {}).daily_breakdown || [];
+    const breakdownMap = {};
+    breakdown.forEach(b => { breakdownMap[b.data] = b; });
+
+    wrap.innerHTML = heatmap.map(h => {
+        const cls = `mp-heat-${h.status}`;
+        const bd = breakdownMap[h.data];
+        const mat = h.mat || 0;
+        const ace = h.aceites || 0;
+        let detail = `${h.realizadas||0}`;
+        if (h.meta) detail += `/${h.meta}`;
+        if (ace > 0) detail += ` (${mat}m+${ace}a)`;
+        const tooltip = h.status === 'future' ? 'Futuro'
+            : `${_mpFmtDate(h.data)}: ${detail}${bd ? ' · ' + _mpFmt(bd.total) : ''}`;
+        return `<div class="${cls} w-4 h-4 rounded-sm cursor-default transition-transform hover:scale-150" title="${tooltip}"></div>`;
+    }).join('');
+}
+
+
+/** Alinha calendário ao gráfico Matrículas por Dia (mesma API / mesma data_matricula). */
+function _mpSyncHeatmapFromChart(d) {
+    const series = d.chart_matriculas_dia || [];
+    if (!series.length || !Array.isArray(d.heatmap)) return;
+
+    const todayStr = new Date().toLocaleDateString('sv-SE');
+    const byDate = {};
+    series.forEach(p => {
+        const key = String(p.data || '').split('T')[0];
+        if (key) byDate[key] = Number(p.matriculas) || 0;
+    });
+
+    d.heatmap = d.heatmap.map(h => {
+        const key = String(h.data || '').split('T')[0];
+        if (!key) return h;
+        if (key > todayStr) {
+            return { ...h, data: key, realizadas: null, mat: 0, aceites: 0, status: 'future' };
+        }
+        const n = byDate[key] ?? 0;
+        const meta = Number(h.meta) || 0;
+        let status = h.status;
+        if (meta > 0) {
+            if (n >= meta) status = 'hit';
+            else if (n > 0) status = 'partial';
+            else status = 'miss';
+        } else if (n > 0) {
+            status = 'partial';
+        }
+        return { ...h, data: key, realizadas: n, mat: n, aceites: 0, status };
+    });
+}
+
+/* ═══ Calendário de Resultados ═══ */
+function _mpRenderCalendar(d) {
+    const wrap = document.getElementById('mp-calendar');
+    if (!wrap) return;
+    const heatmap = d.heatmap || [];
+    if (!heatmap.length) { wrap.innerHTML = '<p class="text-xs text-slate-600">Sem dados</p>'; return; }
+
+    const breakdown = (d.premiacao?.daily_breakdown || []);
+    const bdMap = {};
+    breakdown.forEach(b => { bdMap[b.data] = b; });
+    const hmMap = {};
+    heatmap.forEach(h => {
+        const key = String(h.data || '').split('T')[0];
+        if (key) hmMap[key] = { ...h, data: key };
+    });
+
+    const dtIni = d.campanha?.dt_inicio;
+    const dtFim = d.campanha?.dt_fim;
+    if (!dtIni || !dtFim) { wrap.innerHTML = ''; return; }
+
+    const todayStr = new Date().toLocaleDateString('sv-SE');
+    const startMonth = new Date(new Date(dtIni + 'T00:00:00').getFullYear(), new Date(dtIni + 'T00:00:00').getMonth(), 1);
+    const endMonth   = new Date(new Date(dtFim + 'T00:00:00').getFullYear(), new Date(dtFim + 'T00:00:00').getMonth() + 1, 0);
+    const dayNames = ['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'];
+    const monthNames = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+
+    let months = [];
+    let cur = new Date(startMonth);
+    while (cur <= endMonth) { months.push({ year: cur.getFullYear(), month: cur.getMonth() }); cur.setMonth(cur.getMonth() + 1); }
+
+    const _mpDark = document.documentElement.classList.contains('dark');
+    const sc = _mpDark ? {
+        hit:     { bg: '#064e3b', bg2: '#065f46', border: '#10b981', text: '#6ee7b7', glow: '0 0 16px rgba(16,185,129,.25)' },
+        partial: { bg: '#78350f', bg2: '#92400e', border: '#f59e0b', text: '#fcd34d', glow: 'none' },
+        miss:    { bg: '#450a0a', bg2: '#7f1d1d', border: '#ef4444', text: '#fca5a5', glow: 'none' },
+        rest:    { bg: '#0f172a', bg2: '#1e293b', border: '#334155', text: '#475569', glow: 'none' },
+        future:  { bg: '#0f172a', bg2: '#1e293b', border: '#1e293b', text: '#334155', glow: 'none' },
+    } : {
+        hit:     { bg: '#d1fae5', bg2: '#a7f3d0', border: '#059669', text: '#065f46', glow: '0 0 14px rgba(16,185,129,.18)' },
+        partial: { bg: '#fef3c7', bg2: '#fde68a', border: '#d97706', text: '#78350f', glow: 'none' },
+        miss:    { bg: '#fee2e2', bg2: '#fecaca', border: '#dc2626', text: '#7f1d1d', glow: 'none' },
+        rest:    { bg: '#f1f5f9', bg2: '#e2e8f0', border: '#cbd5e1', text: '#64748b', glow: 'none' },
+        future:  { bg: '#f8fafc', bg2: '#f1f5f9', border: '#e2e8f0', text: '#94a3b8', glow: 'none' },
+    };
+
+    const html = months.map(({ year, month }) => {
+        const lastDay = new Date(year, month + 1, 0).getDate();
+        let startDow = new Date(year, month, 1).getDay() - 1;
+        if (startDow < 0) startDow = 6;
+
+        let cells = '';
+        for (let i = 0; i < startDow; i++) cells += '<div class="h-16"></div>';
+
+        for (let day = 1; day <= lastDay; day++) {
+            const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+            const h = hmMap[dateStr];
+            const bd = bdMap[dateStr];
+            const isToday = dateStr === todayStr;
+            const inRange = dateStr >= dtIni && dateStr <= dtFim;
+
+            if (!inRange) {
+                cells += `<div class="h-16 rounded-lg flex items-center justify-center opacity-15"><span class="text-[10px] text-slate-700">${day}</span></div>`;
+                continue;
+            }
+
+            const isFutureDay = dateStr > todayStr;
+            const status = isFutureDay ? 'future' : (h?.status || 'future');
+            const c = sc[status] || sc.future;
+            const realizadas = isFutureDay ? null : h?.realizadas;
+            const matCount = h?.mat ?? 0;
+            const aceCount = h?.aceites ?? 0;
+            const meta = h?.meta ?? 0;
+            const bonus = bd ? bd.total : 0;
+            const pct = (meta > 0 && realizadas != null) ? Math.min(100, Math.round((realizadas / meta) * 100)) : 0;
+
+            const tipData = JSON.stringify({
+                dateStr, status, matCount, aceCount,
+                realizadas: realizadas ?? 0, meta, bonus, pct, isToday,
+                suporteCal: !!(d.painel_suporte || d.pix_suporte_equipe),
+            }).replace(/"/g, '&quot;');
+
+            let ratioHtml = '';
+            let statusIcon = '';
+            if (status !== 'future' && status !== 'rest' && realizadas != null) {
+                if (d.painel_suporte || d.pix_suporte_equipe) {
+                    if (meta > 0) ratioHtml = `<span class="text-[10px] font-bold opacity-80" style="color:${c.text}">${realizadas}/${meta}</span>`;
+                    if (matCount > 0) ratioHtml += `<span class="text-[8px] opacity-70 block" style="color:${c.text}">${matCount} em curso</span>`;
+                } else if (meta > 0) ratioHtml = `<span class="text-[10px] font-bold opacity-80" style="color:${c.text}">${realizadas}/${meta}</span>`;
+                else if (realizadas > 0) ratioHtml = `<span class="text-[10px] font-bold opacity-80" style="color:${c.text}">${realizadas}</span>`;
+                statusIcon = status === 'hit' ? '✅' : status === 'partial' ? '⚡' : status === 'miss' ? '❌' : '';
+            }
+
+            let miniBar = '';
+            if (meta > 0 && status !== 'future') {
+                miniBar = `<div class="w-full h-[3px] rounded-full mt-auto" style="background:${c.border}20">
+                    <div class="h-full rounded-full" style="width:${pct}%;background:${c.border}"></div>
+                </div>`;
+            }
+
+            const todayCls = isToday ? `ring-2 ring-cyan-400 shadow-lg shadow-cyan-500/20` : '';
+
+            cells += `<div class="mp-cal-cell h-16 rounded-lg flex flex-col items-center justify-center gap-0.5 cursor-pointer relative transition-all duration-150 hover:brightness-125 hover:scale-105 hover:z-20 ${todayCls} overflow-hidden"
+                style="background:linear-gradient(145deg,${c.bg},${c.bg2});border:1px solid ${c.border}40;box-shadow:${c.glow}" data-tip="${tipData}">
+                ${isToday ? '<span class="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></span>' : ''}
+                <span class="text-sm font-black leading-none" style="color:${c.text}">${day}</span>
+                ${ratioHtml}
+                ${statusIcon ? `<span class="text-[8px] leading-none">${statusIcon}</span>` : ''}
+                ${miniBar}
+            </div>`;
+        }
+
+        return `<div class="mb-5 last:mb-0">
+            <p class="text-sm font-bold text-[var(--text-primary)] mb-3 flex items-center gap-2">
+                <span class="material-symbols-outlined text-base text-indigo-400">date_range</span>
+                ${monthNames[month]} ${year}
+            </p>
+            <div class="grid grid-cols-7 gap-2">
+                ${dayNames.map(dn => `<div class="text-center text-[10px] text-slate-500 font-bold pb-2 uppercase tracking-widest">${dn}</div>`).join('')}
+                ${cells}
+            </div>
+        </div>`;
+    }).join('');
+
+    const legend = `<div class="flex flex-wrap items-center justify-center gap-5 mt-4 pt-3 border-t border-[var(--border)] text-[10px]">
+        <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded" style="background:${sc.hit.bg2};border:1px solid ${sc.hit.border}"></span><span class="text-emerald-700 dark:text-emerald-400 font-medium">Bateu ✅</span></span>
+        <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded" style="background:${sc.partial.bg2};border:1px solid ${sc.partial.border}"></span><span class="text-amber-700 dark:text-amber-400 font-medium">Parcial ⚡</span></span>
+        <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded" style="background:${sc.miss.bg2};border:1px solid ${sc.miss.border}"></span><span class="text-rose-700 dark:text-red-400 font-medium">Não bateu ❌</span></span>
+        <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded" style="background:${sc.future.bg2};border:1px solid ${sc.future.border}"></span><span class="text-slate-500 font-medium">Futuro</span></span>
+        <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded ring-2 ring-cyan-400" style="background:${sc.future.bg2}"></span><span class="text-cyan-600 dark:text-cyan-400 font-medium">Hoje</span></span>
+    </div>`;
+
+    wrap.innerHTML = html + legend;
+    wrap.style.position = 'relative';
+
+    let tipEl = document.getElementById('mp-cal-tip');
+    if (tipEl) tipEl.remove();
+    tipEl = document.createElement('div');
+    tipEl.id = 'mp-cal-tip';
+    tipEl.className = 'fixed z-[9999] pointer-events-none transition-all duration-150';
+    tipEl.style.cssText = 'opacity:0;transform:translateY(4px) scale(.96);min-width:220px;max-width:280px;';
+    document.body.appendChild(tipEl);
+
+    _mpCalendarTooltips(wrap, tipEl);
+}
+
+function _mpCalendarTooltips(wrap, tip) {
+    const sm = {
+        hit:     { icon: 'emoji_events', color: '#6ee7b7', accent: '#10b981', label: 'Meta batida! 🎉' },
+        partial: { icon: 'trending_up',  color: '#fcd34d', accent: '#f59e0b', label: 'Quase lá! 💪' },
+        miss:    { icon: 'trending_down', color: '#fca5a5', accent: '#ef4444', label: 'Não bateu 😤' },
+        rest:    { icon: 'bedtime',       color: '#64748b', accent: '#475569', label: 'Dia de descanso' },
+        future:  { icon: 'schedule',      color: '#64748b', accent: '#475569', label: 'Futuro' },
+    };
+    const dayOfWeek = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+
+    wrap.querySelectorAll('.mp-cal-cell').forEach(cell => {
+        cell.addEventListener('mouseenter', () => {
+            const raw = cell.getAttribute('data-tip');
+            if (!raw) return;
+            let data;
+            try { data = JSON.parse(raw); } catch { return; }
+            const s = sm[data.status] || sm.future;
+            const dt = new Date(data.dateStr + 'T00:00:00');
+            const dateFmt = `${dayOfWeek[dt.getDay()]}, ${String(dt.getDate()).padStart(2,'0')}/${String(dt.getMonth()+1).padStart(2,'0')}`;
+
+            let barHtml = '';
+            if (data.meta > 0) {
+                barHtml = `<div class="mt-2">
+                    <div class="flex justify-between text-[10px] mb-1">
+                        <span class="text-slate-400">Progresso</span>
+                        <span class="font-black" style="color:${s.color}">${data.pct}%</span>
+                    </div>
+                    <div class="h-2 rounded-full overflow-hidden" style="background:${s.accent}20">
+                        <div class="h-full rounded-full transition-all" style="width:${data.pct}%;background:linear-gradient(90deg,${s.accent},${s.color})"></div>
+                    </div>
+                </div>`;
+            }
+
+            let rows = '';
+            if (data.status !== 'future') {
+                const _isDark = document.documentElement.classList.contains('dark');
+                const cTxt = _isDark ? '#e2e8f0' : '#1e293b';
+                const cMuted = _isDark ? '#94a3b8' : '#475569';
+                const cAceite = _isDark ? '#c084fc' : '#7c3aed';
+                const mkRow = (label, val, color) => `<div class="flex justify-between items-center py-0.5"><span class="text-slate-500 text-[10px]">${label}</span><span class="font-bold text-[11px]" style="color:${color}">${val}</span></div>`;
+                if (data.matCount > 0) rows += mkRow(data.suporteCal ? '📋 Matrículas (data mat.)' : '📋 Matrículas', data.matCount, cTxt);
+                if (data.aceCount > 0) rows += mkRow('🤝 Aceites', data.aceCount, cAceite);
+                if (data.meta > 0) rows += mkRow('🎯 Meta', data.meta, cMuted);
+                if (data.bonus > 0) rows += `<div class="flex justify-between items-center py-1 mt-1 border-t border-[var(--border)]"><span class="text-slate-500 text-[10px]">💰 Bônus do dia</span><span class="font-black text-xs text-emerald-600 dark:text-emerald-400">${_mpFmt(data.bonus)}</span></div>`;
+            }
+
+            tip.innerHTML = `
+                <div class="rounded-2xl overflow-hidden shadow-2xl" style="border:1px solid ${s.accent}30">
+                    <div class="px-4 py-2.5 flex items-center gap-2" style="background:linear-gradient(135deg,${s.accent}25,${s.accent}10)">
+                        <span class="material-symbols-outlined text-lg" style="color:${s.color}">${s.icon}</span>
+                        <div class="flex-1">
+                            <p class="text-xs font-bold text-[var(--text-primary)]">${dateFmt}</p>
+                            <p class="text-[10px] font-semibold" style="color:${s.color}">${s.label}</p>
+                        </div>
+                        ${data.isToday ? '<span class="text-[9px] font-black text-cyan-400 bg-cyan-400/15 px-2 py-0.5 rounded-full tracking-wide">HOJE</span>' : ''}
+                    </div>
+                    <div class="px-4 py-3" style="background: var(--bg-card);">
+                        ${barHtml}
+                        <div class="mt-1.5">${rows || '<p class="text-slate-500 dark:text-slate-600 text-[10px]">Sem atividade</p>'}</div>
+                    </div>
+                    <div class="h-[3px]" style="background:linear-gradient(90deg,${s.accent},${s.color})"></div>
+                </div>`;
+
+            const rect = cell.getBoundingClientRect();
+            const tipW = 250;
+            tip.style.width = tipW + 'px';
+
+            let left = rect.left + rect.width / 2 - tipW / 2;
+            if (left < 8) left = 8;
+            if (left + tipW > window.innerWidth - 8) left = window.innerWidth - tipW - 8;
+
+            const tipH = 180;
+            let top = rect.top - tipH - 10;
+            if (top < 8) top = rect.bottom + 10;
+
+            tip.style.left = left + 'px';
+            tip.style.top = top + 'px';
+            tip.style.opacity = '1';
+            tip.style.transform = 'translateY(0) scale(1)';
+        });
+
+        cell.addEventListener('mouseleave', () => {
+            tip.style.opacity = '0';
+            tip.style.transform = 'translateY(4px) scale(.96)';
+        });
+    });
+}
+
+
+/* ═══ Progresso por Faixa ═══ */
+function _mpRenderTierProgress(d) {
+    const wrap = document.getElementById('mp-tier-progress');
+    if (!wrap) return;
+    const progress = d.tier_progress || [];
+    if (!progress.length) { wrap.innerHTML = ''; return; }
+
+    const tierColors = {
+        base:          { bar: '#64748b', text: 'text-slate-400' },
+        intermediaria: { bar: '#f97316', text: 'text-orange-400' },
+        meta:          { bar: '#3b82f6', text: 'text-blue-400' },
+        supermeta:     { bar: '#f59e0b', text: 'text-amber-400' },
+    };
+    const tierLabels = { base: 'Base', intermediaria: 'Intermediária', meta: 'Meta', supermeta: 'Supermeta' };
+    const totalMat = d.total_matriculas || 0;
+
+    wrap.innerHTML = progress.filter(p => p.tier !== 'base' || p.valor_por_mat > 0).map(p => {
+        const c = tierColors[p.tier] || tierColors.base;
+        const label = tierLabels[p.tier] || p.tier;
+        const pct = Math.min(p.pct || 0, 100);
+        const falta = Math.max(0, (p.target || 0) - totalMat);
+        const ganhoExtra = p.valor_por_mat > 0 ? _mpFmt(p.ganho) : '';
+
+        return `<div class="flex items-center gap-3">
+            <div class="w-24 flex-shrink-0">
+                <span class="text-xs font-semibold ${c.text}">${label}</span>
+                ${p.target > 0 ? `<span class="text-[10px] text-slate-600 ml-1">(${p.target})</span>` : ''}
+            </div>
+            <div class="flex-1">
+                <div class="bg-slate-200 dark:bg-slate-700/30 rounded-full h-4 overflow-hidden relative">
+                    <div class="h-full rounded-full transition-all duration-1000 flex items-center justify-end pr-1.5" style="width:${pct}%;background:${c.bar};box-shadow:0 0 12px ${c.bar}33">
+                        ${pct >= 18 ? `<span class="text-[9px] font-bold text-white/90">${totalMat}/${p.target||'∞'}</span>` : ''}
+                    </div>
+                    ${pct < 18 && p.target > 0 ? `<span class="absolute left-2 top-0 h-full flex items-center text-[9px] text-slate-400">${totalMat}/${p.target}</span>` : ''}
+                </div>
+            </div>
+            <div class="w-28 text-right flex-shrink-0">
+                ${p.atingido
+                    ? `<span class="text-[10px] font-bold text-emerald-400">✅ ${ganhoExtra}</span>`
+                    : (falta > 0 ? `<span class="text-[10px] text-slate-500">falta ${falta}${ganhoExtra ? ' · +'+ganhoExtra : ''}</span>` : '')}
+            </div>
+        </div>`;
+    }).join('');
+}
+
+
+/* ═══ Níveis de Meta (Incentive Tiers — visão por R$) ═══ */
+function _mpRenderIncentiveTiers(d) {
+    const wrap = document.getElementById('mp-incentive-tiers');
+    const outer = document.getElementById('mp-incentive-tiers-wrap');
+    if (!wrap) return;
+
+    const progress = (d.tier_progress || []).filter(p => p.tier !== 'base');
+    if (!progress.length) {
+        if (outer) outer.classList.add('hidden');
+        wrap.innerHTML = '';
+        return;
+    }
+    if (outer) outer.classList.remove('hidden');
+
+    const totalMat = d.total_matriculas || 0;
+    const tierMeta = {
+        intermediaria: {
+            label: 'Intermediária',
+            badge: 'BRONZE',
+            iconBg: 'bg-orange-100 dark:bg-orange-500/15',
+            iconColor: 'text-orange-600 dark:text-orange-400',
+            badgeBg: 'bg-orange-100 dark:bg-orange-500/20',
+            badgeText: 'text-orange-700 dark:text-orange-300',
+            barFrom: '#fb923c',
+            barTo: '#f97316',
+            icon: 'workspace_premium',
+        },
+        meta: {
+            label: 'Meta',
+            badge: 'PRATA',
+            iconBg: 'bg-blue-100 dark:bg-blue-500/15',
+            iconColor: 'text-blue-600 dark:text-blue-400',
+            badgeBg: 'bg-blue-100 dark:bg-blue-500/20',
+            badgeText: 'text-blue-700 dark:text-blue-300',
+            barFrom: '#60a5fa',
+            barTo: '#3b82f6',
+            icon: 'military_tech',
+        },
+        supermeta: {
+            label: 'Supermeta',
+            badge: 'OURO',
+            iconBg: 'bg-amber-100 dark:bg-amber-500/15',
+            iconColor: 'text-amber-600 dark:text-amber-400',
+            badgeBg: 'bg-amber-100 dark:bg-amber-500/20',
+            badgeText: 'text-amber-700 dark:text-amber-300',
+            barFrom: '#fcd34d',
+            barTo: '#f59e0b',
+            icon: 'emoji_events',
+        },
+    };
+
+    const html = progress.map(p => {
+        const meta = tierMeta[p.tier];
+        if (!meta) return '';
+        const target = p.target || 0;
+        const pct = Math.min(p.pct || 0, 100);
+        const ganhoTotal = (p.valor_por_mat || 0) * (target || 0);
+        const ganhoAtual = p.atingido ? ganhoTotal : (p.valor_por_mat || 0) * Math.min(totalMat, target);
+        const falta = Math.max(0, target - totalMat);
+        const status = p.atingido
+            ? `<span class="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400"><span class="material-symbols-outlined text-[14px]">check_circle</span> Atingido</span>`
+            : (falta > 0
+                ? `<span class="text-[10px] font-semibold text-[var(--text-secondary)]">faltam <strong class="text-[var(--text-primary)]">${falta}</strong> mat.</span>`
+                : '');
+
+        return `<div class="rounded-2xl border p-4 sm:p-5 transition-all hover:shadow-md"
+                     style="background: var(--bg-elevated); border-color: var(--border);">
+            <div class="flex items-start gap-3">
+                <div class="w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${meta.iconBg}">
+                    <span class="material-symbols-outlined text-[22px] ${meta.iconColor}">${meta.icon}</span>
+                </div>
+                <div class="min-w-0 flex-1">
+                    <div class="flex items-center justify-between gap-2 flex-wrap">
+                        <div class="flex items-center gap-2">
+                            <h4 class="text-sm font-bold text-[var(--text-primary)]">${meta.label}</h4>
+                            <span class="text-[9px] font-bold px-2 py-0.5 rounded-full tracking-wider ${meta.badgeBg} ${meta.badgeText}">${meta.badge}</span>
+                        </div>
+                        ${status}
+                    </div>
+                    <p class="text-[11px] text-[var(--text-muted)] mt-0.5">${target} matrículas · ${_mpFmt(p.valor_por_mat || 0)}/mat</p>
+                </div>
+            </div>
+            <div class="mt-3">
+                <div class="flex items-end justify-between gap-2 mb-1.5">
+                    <span class="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)]">Recompensa</span>
+                    <div class="flex items-baseline gap-1">
+                        <span class="text-base font-extrabold tabular-nums text-[var(--text-primary)]">${_mpFmt(ganhoAtual)}</span>
+                        <span class="text-[10px] text-[var(--text-muted)]">/ ${_mpFmt(ganhoTotal)}</span>
+                    </div>
+                </div>
+                <div class="h-2.5 rounded-full overflow-hidden" style="background: rgba(0,0,0,0.06);">
+                    <div class="h-full rounded-full transition-all duration-700"
+                         style="width:${pct}%; background: linear-gradient(90deg, ${meta.barFrom}, ${meta.barTo}); box-shadow: 0 0 10px ${meta.barTo}40;"></div>
+                </div>
+                <div class="flex items-center justify-between mt-1.5 text-[10px] text-[var(--text-muted)]">
+                    <span class="tabular-nums font-semibold">${Math.min(totalMat, target)}/${target}</span>
+                    <span class="font-bold tabular-nums" style="color: ${meta.barTo};">${pct}%</span>
+                </div>
+            </div>
+        </div>`;
+    }).join('');
+
+    wrap.innerHTML = `<div class="grid grid-cols-1 md:grid-cols-3 gap-3">${html}</div>`;
+}
+
+
+/* ═══ Resumo Financeiro ═══ */
+function _mpRenderFinanceiro(d) {
+    const wrap = document.getElementById('mp-financeiro');
+    if (!wrap) return;
+    const prem = d.premiacao || {};
+    const uni = d.unificado;
+    const items = [
+        { label: 'Bônus Tier',    value: prem.tier_bonus || 0, color: '#f59e0b' },
+        { label: 'PIX Diários',   value: prem.daily_bonus || 0, color: '#06b6d4' },
+        { label: 'Recebimentos',  value: prem.receb_bonus || 0, color: '#8b5cf6' },
+    ];
+    const total = prem.total || 0;
+    const maxVal = Math.max(...items.map(i => i.value), 1);
+
+    let uniBadge = '';
+    if (uni) {
+        uniBadge = `
+        <div class="mb-3 p-3 rounded-xl bg-pink-500/8 border border-pink-500/15">
+            <div class="flex items-center gap-2 mb-1">
+                <span class="material-symbols-outlined text-pink-400 text-sm">link</span>
+                <span class="text-xs font-bold text-pink-400">Campanhas Unificadas</span>
+            </div>
+            <p class="text-[10px] text-slate-400">${(uni.campanhas||[]).join(' + ')}</p>
+            <p class="text-[10px] text-emerald-400 mt-1">+${_mpFmt(uni.ganho_extra)} a mais vs. individual!</p>
+        </div>`;
+    }
+
+    wrap.innerHTML = uniBadge + items.map(i => {
+        const pct = Math.round((i.value / maxVal) * 100);
+        return `<div class="flex items-center gap-3">
+            <span class="text-xs text-slate-400 w-24 flex-shrink-0">${i.label}</span>
+            <div class="flex-1 bg-slate-200 dark:bg-slate-700/30 rounded-full h-3 overflow-hidden">
+                <div class="h-full rounded-full transition-all duration-1000" style="width:${pct}%;background:${i.color};box-shadow:0 0 8px ${i.color}33"></div>
+            </div>
+            <span class="text-xs font-bold text-[var(--text-primary)] w-24 text-right">${_mpFmt(i.value)}</span>
+        </div>`;
+    }).join('') + `
+        <div class="flex items-center justify-between pt-3 border-t border-[var(--border)]">
+            <span class="text-sm font-bold text-emerald-400">TOTAL</span>
+            <span class="text-2xl font-black text-emerald-400 mp-stat-value" id="mp-fin-total">${_mpFmt(total)}</span>
+        </div>`;
+
+    _mpCountUp('mp-fin-total', total, { prefix: 'R$ ', decimalPlaces: 2, duration: 2, formattedValue: _mpFmt(total) });
+}
+
+
+/* ═══ Timeline — ApexCharts ═══ */
+function _mpRenderTimeline(d) {
+    const container = document.getElementById('mp-timeline-chart');
+    if (!container || typeof ApexCharts === 'undefined') return;
+
+    const breakdown = d.premiacao?.daily_breakdown || [];
+    if (!breakdown.length) { container.innerHTML = ''; return; }
+
+    const labels = breakdown.map(b => _mpFmtDate(b.data));
+    const matData = breakdown.map(b => b.realizadas);
+    const metaData = breakdown.map(b => b.meta);
+    const bonusData = breakdown.map(b => b.total);
+
+    const chart = new ApexCharts(container, {
+        chart: {
+            type: 'bar',
+            height: 280,
+            background: 'transparent',
+            toolbar: { show: false },
+            animations: { enabled: true, speed: 800, dynamicAnimation: { enabled: true } },
+            fontFamily: 'Inter, sans-serif',
+        },
+        theme: { mode: 'dark' },
+        series: [
+            { name: 'Matrículas', type: 'bar', data: matData },
+            { name: 'Meta', type: 'line', data: metaData },
+            { name: 'Bônus R$', type: 'line', data: bonusData },
+        ],
+        colors: ['#10b981', '#f59e0b', '#06b6d4'],
+        plotOptions: {
+            bar: { borderRadius: 4, columnWidth: '55%' }
+        },
+        stroke: {
+            width: [0, 2, 2],
+            curve: 'smooth',
+            dashArray: [0, 6, 0],
+        },
+        fill: {
+            type: ['solid', 'solid', 'gradient'],
+            gradient: { type: 'vertical', shadeIntensity: .3, opacityFrom: .7, opacityTo: .2 }
+        },
+        labels,
+        xaxis: {
+            labels: { style: { colors: '#64748b', fontSize: '9px' }, rotate: -45, rotateAlways: labels.length > 10 },
+        },
+        yaxis: [
+            { labels: { style: { colors: '#64748b', fontSize: '9px' } }, title: { text: undefined } },
+            { show: false },
+            { opposite: true, labels: { style: { colors: '#06b6d4', fontSize: '9px' }, formatter: v => 'R$' + Math.round(v) }, title: { text: undefined } },
+        ],
+        grid: { borderColor: 'rgba(148,163,184,.08)', xaxis: { lines: { show: false } } },
+        dataLabels: { enabled: false },
+        legend: { labels: { colors: '#94a3b8' }, fontSize: '10px' },
+        tooltip: {
+            theme: 'dark',
+            y: { formatter: (v, { seriesIndex }) => seriesIndex === 2 ? _mpFmt(v) : v }
+        },
+    });
+    chart.render();
+    _mpCharts.timeline = chart;
+}
+
+
+/* ═══ Histórico ═══ */
+function _mpRenderHistorico(hist) {
+    const wrap = document.getElementById('mp-historico');
+    const wrapOuter = document.getElementById('mp-historico-wrap');
+    if (!wrap) return;
+    if (!hist.length) { if (wrapOuter) wrapOuter.classList.add('hidden'); return; }
+    if (wrapOuter) wrapOuter.classList.remove('hidden');
+
+    const tierLabels = { intermediaria: 'Intermediária', meta: 'Meta', supermeta: 'Supermeta' };
+    const tierBorders = {
+        intermediaria: 'border-orange-500/25',
+        meta: 'border-blue-500/25',
+        supermeta: 'border-amber-500/25',
+    };
+
+    wrap.innerHTML = hist.filter(h => !h.ativa).map(h => {
+        const border = tierBorders[h.tier] || 'border-[var(--border)]';
+        return `<div class="mp-card p-4 min-w-[210px] flex-shrink-0 ${border} snap-start">
+            <p class="text-xs font-semibold text-[var(--text-primary)] mb-1">${h.nome}</p>
+            <p class="text-[10px] text-slate-500">${_mpFmtDate(h.dt_inicio)} — ${_mpFmtDate(h.dt_fim)}</p>
+            <div class="flex items-baseline gap-2 mt-2">
+                <span class="text-lg font-bold text-[var(--text-primary)]">${h.total_matriculas}</span>
+                <span class="text-[10px] text-slate-500">matrículas</span>
+            </div>
+            <p class="text-xs ${h.tier ? 'text-emerald-400 font-semibold' : 'text-slate-600'}">${h.tier ? tierLabels[h.tier] : 'Sem tier'}</p>
+            <p class="text-sm font-bold text-emerald-400 mt-1">${_mpFmt(h.total_premiacao)}</p>
+        </div>`;
+    }).join('') || '<p class="text-xs text-slate-600">Nenhuma campanha anterior</p>';
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Sub-abas: Performance / Minhas Matrículas
+   ═══════════════════════════════════════════════════════════════════════ */
+
+let _mpCurrentTab = 'performance';
+let _mpMatLoaded = false;
+
+function _mpEffectiveMatUid() {
+    const raw = (_mpCanManagePremiacao && _mpSelectedUid && _mpSelectedUid !== 'suporte_equipe')
+        ? _mpSelectedUid
+        : _mpMyUid;
+    const n = Number(raw);
+    return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function _mpSwitchTab(tab) {
+    _mpCurrentTab = tab;
+    const perf = document.getElementById('mp-content');
+    const heroWrap = document.getElementById('mp-hero-wrap');
+    const mat  = document.getElementById('mp-mat-content');
+    const tabP = document.getElementById('mp-tab-performance');
+    const tabM = document.getElementById('mp-tab-matriculas');
+    if (!perf || !mat) return;
+
+    const rowCls = 'ds-segment__btn flex items-center gap-1 text-xs font-bold uppercase tracking-wider';
+
+    if (tab === 'performance') {
+        perf.classList.remove('hidden');
+        const hero = document.getElementById('mp-hero');
+        if (heroWrap && hero && !hero.classList.contains('hidden')) {
+            heroWrap.classList.remove('hidden');
+        }
+        mat.classList.add('hidden');
+        tabP.className = rowCls + ' ds-segment__btn--active';
+        tabM.className = rowCls + ' ds-segment__btn--inactive';
+    } else {
+        perf.classList.add('hidden');
+        if (heroWrap) heroWrap.classList.add('hidden');
+        mat.classList.remove('hidden');
+        tabM.className = rowCls + ' ds-segment__btn--active';
+        tabP.className = rowCls + ' ds-segment__btn--inactive';
+        if (!_mpMatLoaded) {
+            _mpMatLoaded = true;
+            const now = new Date();
+            const y = now.getFullYear();
+            const m = String(now.getMonth() + 1).padStart(2, '0');
+            const iniEl = document.getElementById('mp-mat-dt-ini');
+            const fimEl = document.getElementById('mp-mat-dt-fim');
+            if (iniEl && !iniEl.value) iniEl.value = `${y}-${m}-01`;
+            if (fimEl && !fimEl.value) {
+                const last = new Date(y, now.getMonth() + 1, 0).getDate();
+                fimEl.value = `${y}-${m}-${String(last).padStart(2, '0')}`;
+            }
+            _mpLoadMatriculas();
+            _mpLoadMinhasMatriculas();
+            _mpLoadAjustes();
+        }
+    }
+}
+
+
+/* ═══ Matrículas Oficiais ═══ */
+
+let _mpOficialData = [];
+
+let _mpStatusFilter = 'all'; // 'all' | 'ativo' | 'evadido' | 'outros'
+
+function _mpClassifySituacao(sit) {
+    const s = (sit || '').toUpperCase();
+    if (!s) return 'outros';
+    if (s === 'EM CURSO') return 'ativo';
+    if (s.includes('CANCEL') || s.includes('EVAD') || s.includes('DESIST') || s.includes('TRANC')) return 'evadido';
+    return 'outros';
+}
+
+async function _mpLoadMatriculas() {
+    const uid = _mpEffectiveMatUid();
+    if (!uid) return;
+    const tbody = document.getElementById('mp-mat-oficial-tbody');
+    const countEl = document.getElementById('mp-mat-oficial-count');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="7" class="py-6 text-center text-slate-600 text-xs">Carregando...</td></tr>';
+    try {
+        let qs = `kommo_uid=${uid}`;
+        const dtIni = document.getElementById('mp-mat-dt-ini')?.value;
+        const dtFim = document.getElementById('mp-mat-dt-fim')?.value;
+        if (dtIni) qs += `&dt_ini=${dtIni}`;
+        if (dtFim) qs += `&dt_fim=${dtFim}`;
+        const res = await api(`/api/minha-performance/matriculas?${qs}`);
+        const d = await res.json();
+        _mpOficialData = d.matriculas || [];
+
+        const _mpContaMeta = m => m.conta_para_meta !== false;
+        const counts = { all: _mpOficialData.length, ativo: 0, ativo_contando: 0, evadido: 0, outros: 0, fora_padrao: 0 };
+        _mpOficialData.forEach(m => {
+            const cat = _mpClassifySituacao(m.situacao);
+            counts[cat]++;
+            if (cat === 'ativo') {
+                if (_mpContaMeta(m)) counts.ativo_contando++;
+                else if (m.outlier) counts.fora_padrao++;
+            }
+        });
+
+        const totalContando = d.total_contando ?? d.total_contavel ?? counts.ativo_contando;
+        let summary = `<span class="text-emerald-600 dark:text-emerald-400 font-semibold">${totalContando} em curso</span>`;
+        if (counts.fora_padrao) {
+            summary += ` · <span class="text-amber-600 dark:text-amber-400">${counts.fora_padrao} fora do padrão</span>`;
+        }
+        if (countEl) countEl.innerHTML = summary;
+
+        document.querySelectorAll('#mp-mat-oficial-pills .mp-status-pill').forEach(btn => {
+            const c = btn.querySelector('.mp-pill-count');
+            if (!c) return;
+            const st = btn.dataset.status;
+            if (st === 'ativo') c.textContent = totalContando;
+            else if (st === 'all') c.textContent = counts.all;
+            else c.textContent = counts[st] || 0;
+        });
+
+        _mpRenderOficialTable(_mpOficialData);
+        _mpFilterOficial();
+    } catch(e) {
+        if (tbody) tbody.innerHTML = '<tr><td colspan="7" class="py-6 text-center text-red-400 text-xs">Erro ao carregar</td></tr>';
+    }
+}
+
+function _mpRenderOficialTable(mats) {
+    const tbody = document.getElementById('mp-mat-oficial-tbody');
+    if (!tbody) return;
+    if (!mats.length) {
+        tbody.innerHTML = '<tr><td colspan="7" class="py-6 text-center text-slate-600 text-xs">Nenhuma matrícula encontrada</td></tr>';
+        return;
+    }
+    tbody.innerHTML = mats.map(m => {
+        const sit = (m.situacao || '').toUpperCase();
+        const cat = _mpClassifySituacao(sit);
+        const badge = sit
+            ? (cat === 'evadido'
+                ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-500/15 text-red-400 border border-red-500/20">${sit}</span>`
+                : cat === 'ativo'
+                    ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">${sit}</span>`
+                    : `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-500 dark:text-amber-400 border border-amber-500/20">${sit}</span>`)
+            : '<span class="text-slate-600">—</span>';
+
+        const isOutlier = !!m.outlier;
+        const rowBg = isOutlier ? 'bg-orange-50 dark:bg-orange-500/5' : '';
+        const rgmDisplay = isOutlier
+            ? `<span class="font-mono text-orange-700 dark:text-orange-300" title="RGM fora do padrão do ciclo">${m.rgm||'—'} ⚠</span>`
+            : (m.rgm||'—');
+
+        let contagemCell = '';
+        if (isOutlier) {
+            if (!m.conta_para_meta) {
+                contagemCell = _mpIsAdmin
+                    ? `<button onclick="_mpOutlierContarVenda(${JSON.stringify(m.rgm)}, true)" class="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-orange-500/20 text-orange-300 border border-orange-500/40 hover:bg-orange-500/40 transition-colors">Contar venda</button>`
+                    : `<span class="text-[10px] text-orange-400/70">Não conta</span>`;
+            } else {
+                contagemCell = `<span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/20 text-emerald-300">✓ Contando</span>` +
+                    (_mpIsAdmin ? ` <button onclick="_mpOutlierContarVenda(${JSON.stringify(m.rgm)}, false)" class="text-[10px] text-slate-500 hover:text-red-400 underline">Desfazer</button>` : '');
+            }
+        }
+
+        return `<tr class="border-b border-slate-200 dark:border-slate-800/50 mp-oficial-row ${rowBg} hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors"
+                    data-search="${(m.nome||'').toLowerCase()} ${(m.rgm||'').toLowerCase()} ${(m.curso||'').toLowerCase()}"
+                    data-status="${cat}">
+            <td class="py-1.5 px-2 text-slate-700 dark:text-slate-300">${m.nome||'—'}</td>
+            <td class="py-1.5 px-2 text-slate-500 dark:text-slate-400 font-mono">${rgmDisplay}</td>
+            <td class="py-1.5 px-2 text-slate-500 dark:text-slate-400">${m.curso || m.nivel || '—'}</td>
+            <td class="py-1.5 px-2 text-slate-500 dark:text-slate-400">${m.polo||'—'}</td>
+            <td class="py-1.5 px-2 text-slate-500 dark:text-slate-400">${_mpFmtDate(m.data_matricula)}</td>
+            <td class="py-1.5 px-2">${badge}</td>
+            <td class="py-1.5 px-2">${contagemCell}</td>
+        </tr>`;
+    }).join('');
+}
+
+async function _mpOutlierContarVenda(rgm, contar) {
+    try {
+        const method = contar ? 'POST' : 'DELETE';
+        const res = await api('/api/comercial-rgm/outlier/contar-venda', {
+            method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ rgm }),
+        });
+        const d = await res.json();
+        if (!d.ok) { alert(d.error || 'Erro ao atualizar contagem'); return; }
+        await _mpLoadMatriculas();
+    } catch(e) {
+        alert('Erro de rede ao atualizar contagem');
+    }
+}
+
+function _mpSetStatusFilter(status) {
+    _mpStatusFilter = status || 'all';
+    document.querySelectorAll('#mp-mat-oficial-pills .mp-status-pill').forEach(btn => {
+        btn.classList.toggle('is-active', btn.dataset.status === _mpStatusFilter);
+    });
+    _mpFilterOficial();
+}
+
+function _mpFilterOficial() {
+    const q = (document.getElementById('mp-mat-oficial-search')?.value || '').toLowerCase();
+    let visible = 0;
+    document.querySelectorAll('.mp-oficial-row').forEach(row => {
+        const matchSearch = !q || row.dataset.search.includes(q);
+        const matchStatus = _mpStatusFilter === 'all' || row.dataset.status === _mpStatusFilter;
+        const show = matchSearch && matchStatus;
+        row.style.display = show ? '' : 'none';
+        if (show) visible++;
+    });
+    const tbody = document.getElementById('mp-mat-oficial-tbody');
+    let empty = document.getElementById('mp-mat-oficial-empty');
+    if (tbody && _mpOficialData.length && visible === 0) {
+        if (!empty) {
+            empty = document.createElement('tr');
+            empty.id = 'mp-mat-oficial-empty';
+            empty.innerHTML = '<td colspan="7" class="py-6 text-center text-slate-500 dark:text-slate-600 text-xs">Nenhuma matrícula corresponde aos filtros.</td>';
+            tbody.appendChild(empty);
+        } else {
+            empty.style.display = '';
+        }
+    } else if (empty) {
+        empty.style.display = 'none';
+    }
+}
+
+
+/* ═══ Minha Lista (CRUD) ═══ */
+
+let _mpMinhasData = [];
+
+async function _mpLoadMinhasMatriculas() {
+    const uid = _mpEffectiveMatUid();
+    const tbody = document.getElementById('mp-minha-lista-tbody');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="7" class="py-6 text-center text-slate-600 text-xs">Carregando...</td></tr>';
+    try {
+        const qs = uid ? `?kommo_uid=${uid}` : '';
+        const res = await api(`/api/minha-performance/minhas-matriculas${qs}`);
+        const d = await res.json();
+        if (!res.ok || d.ok === false) {
+            throw new Error(d.error || `HTTP ${res.status}`);
+        }
+        _mpMinhasData = d.matriculas || [];
+        _mpRenderMinhaLista();
+    } catch(e) {
+        console.error('_mpLoadMinhasMatriculas', e);
+        const msg = e.message === 'Sessão expirada' ? 'Sessão expirada' : (e.message || 'Erro ao carregar');
+        if (tbody) tbody.innerHTML = `<tr><td colspan="7" class="py-6 text-center text-red-400 text-xs">${msg}</td></tr>`;
+    }
+}
+
+function _mpRenderMinhaLista() {
+    const tbody = document.getElementById('mp-minha-lista-tbody');
+    if (!tbody) return;
+    if (!_mpMinhasData.length) {
+        tbody.innerHTML = '<tr><td colspan="7" class="py-6 text-center text-slate-600 text-xs">Nenhuma matrícula cadastrada. Clique em "Adicionar" acima.</td></tr>';
+        return;
+    }
+    tbody.innerHTML = _mpMinhasData.map(m => `<tr class="border-b border-slate-200 dark:border-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
+        <td class="py-1.5 px-2 text-[var(--text-primary)]">${m.nome||'—'}</td>
+        <td class="py-1.5 px-2 text-slate-400 font-mono">${m.rgm||'—'}</td>
+        <td class="py-1.5 px-2 text-slate-400">${m.curso||'—'}</td>
+        <td class="py-1.5 px-2 text-slate-400">${m.polo||'—'}</td>
+        <td class="py-1.5 px-2 text-slate-400">${_mpFmtDate(m.data_matricula)}</td>
+        <td class="py-1.5 px-2 text-slate-400 font-mono">${m.kommo_lead_id||'—'}</td>
+        <td class="py-1.5 px-2">
+            <div class="flex items-center gap-1">
+                <button onclick="_mpEditMinhaMatricula(${m.id})" class="text-blue-400 hover:text-blue-300 transition-colors" title="Editar">
+                    <span class="material-symbols-outlined text-sm">edit</span>
+                </button>
+                <button onclick="_mpDeleteMinhaMatricula(${m.id})" class="text-red-400 hover:text-red-300 transition-colors" title="Excluir">
+                    <span class="material-symbols-outlined text-sm">delete</span>
+                </button>
+            </div>
+        </td>
+    </tr>`).join('');
+}
+
+function _mpOpenMinhaMatModal(data = null) {
+    const modal = document.getElementById('mp-modal-minha-mat');
+    const title = document.getElementById('mp-minha-mat-title');
+    if (!modal) return;
+    document.getElementById('mp-minha-mat-id').value = data ? data.id : '';
+    document.getElementById('mp-mm-nome').value = data?.nome || '';
+    document.getElementById('mp-mm-rgm').value = data?.rgm || '';
+    document.getElementById('mp-mm-curso').value = data?.curso || '';
+    document.getElementById('mp-mm-polo').value = data?.polo || '';
+    document.getElementById('mp-mm-data').value = data?.data_matricula ? String(data.data_matricula).substring(0,10) : '';
+    document.getElementById('mp-mm-ciclo').value = data?.ciclo || '';
+    document.getElementById('mp-mm-nivel').value = data?.nivel || '';
+    document.getElementById('mp-mm-kommo').value = data?.kommo_lead_id || '';
+    document.getElementById('mp-mm-obs').value = data?.observacao || '';
+    if (title) title.textContent = data ? 'Editar Matrícula' : 'Adicionar Matrícula';
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+}
+
+function _mpEditMinhaMatricula(id) {
+    const m = _mpMinhasData.find(x => x.id === id);
+    if (m) _mpOpenMinhaMatModal(m);
+}
+
+async function _mpSaveMinhaMatricula() {
+    const id = document.getElementById('mp-minha-mat-id').value;
+    const body = {
+        nome: document.getElementById('mp-mm-nome').value,
+        rgm: document.getElementById('mp-mm-rgm').value,
+        curso: document.getElementById('mp-mm-curso').value,
+        polo: document.getElementById('mp-mm-polo').value,
+        data_matricula: document.getElementById('mp-mm-data').value || null,
+        ciclo: document.getElementById('mp-mm-ciclo').value,
+        nivel: document.getElementById('mp-mm-nivel').value,
+        kommo_lead_id: document.getElementById('mp-mm-kommo').value,
+        observacao: document.getElementById('mp-mm-obs').value,
+    };
+    try {
+        const method = id ? 'PUT' : 'POST';
+        const url = id ? `/api/minha-performance/minhas-matriculas/${id}` : '/api/minha-performance/minhas-matriculas';
+        const res = await api(url, { method, headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data.ok === false) {
+            throw new Error(data.error || `Erro ao salvar (HTTP ${res.status})`);
+        }
+        document.getElementById('mp-modal-minha-mat').classList.add('hidden');
+        document.getElementById('mp-modal-minha-mat').classList.remove('flex');
+        if (typeof toast === 'function') toast(id ? 'Matrícula atualizada!' : 'Matrícula adicionada à sua lista!');
+        await _mpLoadMinhasMatriculas();
+    } catch(e) {
+        alert('Erro ao salvar: ' + (e.message || e));
+    }
+}
+
+async function _mpDeleteMinhaMatricula(id) {
+    if (!confirm('Excluir esta matrícula da sua lista?')) return;
+    try {
+        await api(`/api/minha-performance/minhas-matriculas/${id}`, { method: 'DELETE' });
+        _mpLoadMinhasMatriculas();
+    } catch(e) {
+        alert('Erro ao excluir: ' + e.message);
+    }
+}
+
+
+/* ═══ Solicitações de Ajuste (Agente) ═══ */
+
+let _mpAjustesData = [];
+
+async function _mpLoadAjustes() {
+    const uid = _mpEffectiveMatUid();
+    const list = document.getElementById('mp-ajustes-list');
+    if (list) list.innerHTML = '<p class="text-xs text-slate-600 py-4 text-center">Carregando...</p>';
+    try {
+        const qs = uid ? `?kommo_uid=${uid}` : '';
+        const res = await api(`/api/minha-performance/ajustes${qs}`);
+        const d = await res.json();
+        if (!res.ok || d.ok === false) {
+            throw new Error(d.error || `HTTP ${res.status}`);
+        }
+        _mpAjustesData = d.ajustes || [];
+        _mpRenderAjustesList();
+    } catch(e) {
+        console.error('_mpLoadAjustes', e);
+        if (list) list.innerHTML = '<p class="text-xs text-red-400 py-4 text-center">Erro ao carregar</p>';
+    }
+}
+
+const _mpAjTipoLabel = { matricula_nao_computada: 'Matrícula não computada', dados_incorretos: 'Dados incorretos', evasao_indevida: 'Evasão indevida' };
+const _mpAjStatusColor = {
+    pendente: 'bg-amber-500/15 text-amber-400 border-amber-500/20',
+    em_analise: 'bg-blue-500/15 text-blue-400 border-blue-500/20',
+    aprovado: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/20',
+    rejeitado: 'bg-red-500/15 text-red-400 border-red-500/20',
+};
+const _mpAjStatusLabel = { pendente: 'Pendente', em_analise: 'Em análise', aprovado: 'Aprovado', rejeitado: 'Rejeitado' };
+
+function _mpRenderAjustesList() {
+    const list = document.getElementById('mp-ajustes-list');
+    if (!list) return;
+    if (!_mpAjustesData.length) {
+        list.innerHTML = '<p class="text-xs text-slate-600 py-4 text-center">Nenhuma solicitação enviada.</p>';
+        return;
+    }
+    list.innerHTML = _mpAjustesData.map(a => {
+        const sc = _mpAjStatusColor[a.status] || _mpAjStatusColor.pendente;
+        return `<div class="border border-[var(--border)] rounded-lg p-3 mb-2 hover:bg-slate-50 dark:hover:bg-slate-800/20 transition-colors">
+            <div class="flex flex-wrap items-center gap-2 mb-1">
+                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold border ${sc}">${_mpAjStatusLabel[a.status] || a.status}</span>
+                <span class="text-[10px] text-slate-500">${_mpAjTipoLabel[a.tipo] || a.tipo}</span>
+                <span class="text-[10px] text-slate-600 ml-auto">${_mpFmtDate(String(a.created_at).substring(0,10))}</span>
+            </div>
+            <p class="text-xs text-slate-700 dark:text-slate-300"><strong>${a.nome_aluno || '—'}</strong> — RGM: ${a.rgm || '—'} — Lead: ${a.kommo_lead_id || '—'}</p>
+            <p class="text-[10px] text-slate-500 mt-1">${a.descricao || ''}</p>
+            ${a.resposta_admin ? `<div class="mt-2 px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-800/50 border border-[var(--border)]">
+                <p class="text-[10px] text-slate-600 dark:text-slate-400"><span class="font-semibold text-slate-700 dark:text-slate-300">Resposta:</span> ${a.resposta_admin}</p>
+            </div>` : ''}
+        </div>`;
+    }).join('');
+}
+
+function _mpOpenAjusteModal() {
+    const modal = document.getElementById('mp-modal-ajuste');
+    if (!modal) return;
+    ['mp-aj-nome','mp-aj-rgm','mp-aj-curso','mp-aj-polo','mp-aj-data','mp-aj-kommo','mp-aj-desc'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+    });
+    const tipo = document.getElementById('mp-aj-tipo');
+    if (tipo) tipo.value = 'matricula_nao_computada';
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+}
+
+async function _mpSaveAjuste() {
+    const kommoId = document.getElementById('mp-aj-kommo')?.value?.trim();
+    const desc = document.getElementById('mp-aj-desc')?.value?.trim();
+    if (!kommoId) { alert('Lead Kommo ID é obrigatório'); return; }
+    if (!desc) { alert('Justificativa é obrigatória'); return; }
+    const body = {
+        tipo: document.getElementById('mp-aj-tipo')?.value,
+        nome_aluno: document.getElementById('mp-aj-nome')?.value,
+        rgm: document.getElementById('mp-aj-rgm')?.value,
+        curso: document.getElementById('mp-aj-curso')?.value,
+        polo: document.getElementById('mp-aj-polo')?.value,
+        data_matricula: document.getElementById('mp-aj-data')?.value || null,
+        kommo_lead_id: kommoId,
+        descricao: desc,
+    };
+    try {
+        const res = await api('/api/minha-performance/ajustes', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data.ok === false) {
+            throw new Error(data.error || `Erro ao enviar (HTTP ${res.status})`);
+        }
+        document.getElementById('mp-modal-ajuste').classList.add('hidden');
+        document.getElementById('mp-modal-ajuste').classList.remove('flex');
+        if (typeof toast === 'function') toast('Solicitação enviada! Acompanhe em Solicitações de Ajuste.');
+        _mpLoadAjustes();
+    } catch(e) {
+        alert('Erro ao enviar: ' + (e.message || e));
+    }
+}
+
+
+/* ═══ Filtro rápido por período de Meta ═══ */
+
+let _mpMetaPeriodosCache = null;
+let _mpMetaDropdownOpen = false;
+
+async function _mpToggleMetaPeriodos() {
+    const dropdown = document.getElementById('mp-meta-periodo-dropdown');
+    const chevron = document.getElementById('mp-meta-periodo-chevron');
+    if (!dropdown) return;
+
+    _mpMetaDropdownOpen = !_mpMetaDropdownOpen;
+    if (!_mpMetaDropdownOpen) {
+        dropdown.classList.add('hidden');
+        if (chevron) chevron.textContent = 'expand_more';
+        return;
+    }
+
+    dropdown.classList.remove('hidden');
+    if (chevron) chevron.textContent = 'expand_less';
+
+    if (_mpMetaPeriodosCache && _mpMetaPeriodosCache.length) {
+        _mpRenderMetaPeriodos(_mpMetaPeriodosCache);
+        return;
+    }
+
+    const listEl = document.getElementById('mp-meta-periodo-list');
+    if (listEl) listEl.innerHTML = '<div class="py-2">Carregando...</div>';
+
+    try {
+        const res = await api('/api/premiacao/campanhas-periodos');
+        const d = await res.json();
+        if (!d.ok) throw new Error(d.error || 'Erro');
+        _mpMetaPeriodosCache = d.campanhas || [];
+        _mpRenderMetaPeriodos(_mpMetaPeriodosCache);
+    } catch(e) {
+        if (listEl) listEl.innerHTML = `<div class="py-2 text-red-400">Erro: ${e.message}</div>`;
+    }
+}
+
+function _mpRenderMetaPeriodos(campanhas) {
+    const listEl = document.getElementById('mp-meta-periodo-list');
+    if (!listEl) return;
+    if (!campanhas.length) {
+        listEl.innerHTML = '<div class="py-2 text-slate-500">Nenhuma meta cadastrada</div>';
+        return;
+    }
+    listEl.innerHTML = campanhas.map(c => {
+        const ini = c.dt_inicio;
+        const fim = c.dt_fim;
+        const label = c.nome || `${_mpFmtDate(ini)} → ${_mpFmtDate(fim)}`;
+        const sub = `${_mpFmtDate(ini)} → ${_mpFmtDate(fim)}`;
+        return `<button onclick="_mpAplicarMetaPeriodo('${ini}','${fim}')"
+            class="w-full text-left px-3 py-2 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors border-b border-slate-200 dark:border-slate-800/50 last:border-0">
+            <div class="font-semibold text-[var(--text-primary)]">${label}</div>
+            <div class="text-[10px] text-slate-500 mt-0.5">${sub}</div>
+        </button>`;
+    }).join('');
+}
+
+function _mpAplicarMetaPeriodo(dtIni, dtFim) {
+    const iniEl = document.getElementById('mp-mat-dt-ini');
+    const fimEl = document.getElementById('mp-mat-dt-fim');
+    if (iniEl) iniEl.value = dtIni;
+    if (fimEl) fimEl.value = dtFim;
+
+    const dropdown = document.getElementById('mp-meta-periodo-dropdown');
+    const chevron = document.getElementById('mp-meta-periodo-chevron');
+    if (dropdown) dropdown.classList.add('hidden');
+    if (chevron) chevron.textContent = 'expand_more';
+    _mpMetaDropdownOpen = false;
+
+    _mpLoadMatriculas();
+}
+
+// Fecha dropdown ao clicar fora
+document.addEventListener('click', function(e) {
+    const wrap = document.getElementById('mp-meta-periodo-wrap');
+    if (wrap && !wrap.contains(e.target) && _mpMetaDropdownOpen) {
+        document.getElementById('mp-meta-periodo-dropdown')?.classList.add('hidden');
+        const chevron = document.getElementById('mp-meta-periodo-chevron');
+        if (chevron) chevron.textContent = 'expand_more';
+        _mpMetaDropdownOpen = false;
+    }
+});

@@ -1,36 +1,51 @@
 # Dash Comercial
 
-Demo de **portfólio** com as abas comerciais do cockpit:
+Portfólio com o **front real** das abas comerciais que construí em produção, rodando contra uma **API mock** local (sem banco, sem `.env`, sem Kommo).
 
-1. **Dashboard Comercial** — KPIs, matrículas/dia, ranking e polos  
-2. **Distribuição Consultor** — leads por consultor/origem e conversão  
-3. **Premiação** — campanhas, grupos e PIX por equipe  
-4. **Minha Performance** — saldo, PIX do dia, ritmo e heatmap  
-5. **Repasse** — recebimentos × taxa × detalhe por consultor  
+## Abas
 
-> Recorte de UI/UX baseado no que construí em produção.  
-> Repositório **estático** (HTML/CSS/JS + JSON mock). Sem backend, sem `.env`, sem CRM.
+| Aba | Template | JS (produção) |
+|-----|----------|----------------|
+| Dashboard Comercial | `_comercial_rgm.html` | `comercial_rgm.js` (~3.4k linhas) |
+| Distribuição Consultor | `_dist_consultor.html` | `dist_consultor.js` (~1.5k) |
+| Premiação | `_premiacao_admin.html` | `premiacao_admin.js` (~860) |
+| Minha Performance | `_minha_performance.html` | `minha_performance.js` (~1.8k) |
+| Repasse | `_repasse.html` | `repasse.js` (~430) |
 
-## Como ver
+Isso é o código de interface de verdade — não um mockup de 300 linhas.
+
+## Como rodar
 
 ```bash
-python -m http.server 8080
-# ou: npx serve .
+python -m venv .venv
+# Windows:
+.venv\Scripts\activate
+pip install -r requirements.txt
+python app.py
 ```
 
-Abra: http://localhost:8080
+Abra: http://127.0.0.1:5055
 
-## Estrutura
+## O que é mock
 
-| Path | Função |
-|------|--------|
-| `index.html` | Shell + sidebar + 5 páginas |
-| `js/app.js` | Navegação, charts e tabelas |
-| `css/styles.css` | Tema dark do cockpit |
-| `data/*.json` | Mocks ilustrativos |
+- Respostas em `mocks/*.json` + rotas em `app.py`
+- Webhook n8n da Distribuição Consultor → `/api/mock/dist-webhook` (não chama produção)
+- Mutações (POST/PUT/DELETE) respondem `{ ok: true }` sem efeito
 
-Números são de ordem de grandeza operacional, **não** dados sensíveis de produção.
+## O que NÃO vai neste repo
+
+- Credenciais, `.env`, tokens Kommo/SIAA
+- Banco Postgres / sync massivo
+- Restante do monorepo (acadêmico, disparador, etc.)
+
+## Case study (resumo do trabalho real)
+
+- Ranking comercial alinhado a matrículas oficiais + recuperação de RGM que some do SIAA
+- Premiação com metas/R$ por equipe (Alta Performance vs Impulso) + PIX diário
+- Minha Performance com saldo, faixas, heatmap e visão Suporte
+- Repasse de recebimentos com taxa configurável por ciclo
+- Distribuição por consultor/origem (n8n + cruzamento Kommo)
 
 ---
 
-Feito por [Rapha-Tomita](https://github.com/Rapha-Tomita) · snapshot de portfólio.
+[Rapha-Tomita](https://github.com/Rapha-Tomita) · snapshot de portfólio (código de UI real + mocks).

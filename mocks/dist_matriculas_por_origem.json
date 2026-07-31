@@ -1,0 +1,11 @@
+{
+  "ok": true,
+  "total": 412,
+  "data": [
+    { "origem": "Indicação", "do_periodo": 148, "fora_periodo": 6, "total": 154 },
+    { "origem": "Site", "do_periodo": 112, "fora_periodo": 4, "total": 116 },
+    { "origem": "Tronco", "do_periodo": 84, "fora_periodo": 3, "total": 87 },
+    { "origem": "SIAA", "do_periodo": 45, "fora_periodo": 2, "total": 47 },
+    { "origem": "Redes Sociais", "do_periodo": 23, "fora_periodo": 1, "total": 24 }
+  ]
+}

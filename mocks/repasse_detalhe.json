@@ -1,0 +1,10 @@
+{
+  "ok": true,
+  "total": 12480.5,
+  "alunos": [
+    { "rgm": "49497001", "tipo_pagamento": "Mensalidade", "turma": "ADS-N26/2", "ciclo": "2026/2", "valor": 249.9 },
+    { "rgm": "49497002", "tipo_pagamento": "Mensalidade", "turma": "ADM-N26/2", "ciclo": "2026/2", "valor": 289.0 },
+    { "rgm": "49497003", "tipo_pagamento": "Matrícula", "turma": "DIR-M26/2", "ciclo": "2026/2", "valor": 199.9 },
+    { "rgm": "49497004", "tipo_pagamento": "Mensalidade", "turma": "PED-N26/2", "ciclo": "2026/2", "valor": 259.9 }
+  ]
+}

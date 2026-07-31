@@ -1,0 +1,46 @@
+/* Layout portfólio — sidebar + conteúdo (compatível com glass-sidebar do cockpit) */
+body {
+  margin: 0;
+  background: var(--bg-main, #0b1623);
+  color: var(--text-primary, #e6edf6);
+}
+.main-with-sidebar {
+  margin-left: 260px;
+  min-height: 100vh;
+}
+@media (max-width: 900px) {
+  .main-with-sidebar { margin-left: 0; }
+}
+#sidebar.glass-sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 260px;
+  z-index: 40;
+  overflow-y: auto;
+  background: linear-gradient(180deg, #0d1a2a, #0a1420);
+  border-right: 1px solid rgba(76, 112, 154, 0.3);
+}
+@media (max-width: 900px) {
+  #sidebar.glass-sidebar {
+    transform: translateX(-105%);
+    transition: transform 0.2s ease;
+  }
+  #sidebar.glass-sidebar.open { transform: translateX(0); }
+}
+.sidebar-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  z-index: 35;
+}
+.sidebar-overlay.open { display: block; }
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: rgba(11, 22, 35, 0.85);
+  backdrop-filter: blur(8px);
+}

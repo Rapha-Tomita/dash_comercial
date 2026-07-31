@@ -1,0 +1,29 @@
+{
+  "ok": true,
+  "polos": [
+    "Barra Funda",
+    "Taboão da Serra_Centro",
+    "Santo Amaro",
+    "Campinas",
+    "São Bernardo do Campo",
+    "Osasco",
+    "Guarulhos"
+  ],
+  "niveis": [
+    "Graduação",
+    "Pós-Graduação",
+    "Segunda Graduação",
+    "Extensão"
+  ],
+  "agentes": [
+    { "id": 8261901, "name": "Rahi Almeida" },
+    { "id": 8261902, "name": "Gabriel Messias" },
+    { "id": 8261903, "name": "Beatriz Souza" },
+    { "id": 8261904, "name": "Hugo Ferreira" },
+    { "id": 8261905, "name": "Juliana Prado" },
+    { "id": 8261906, "name": "Paloma Ribeiro" },
+    { "id": 8261907, "name": "Kamilly Torres" },
+    { "id": 8261908, "name": "Claudia Nunes" },
+    { "id": 8261837, "name": "Admin Sistema" }
+  ]
+}

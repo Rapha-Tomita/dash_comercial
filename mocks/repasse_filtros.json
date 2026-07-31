@@ -1,0 +1,10 @@
+{
+  "ok": true,
+  "ciclos": ["2026/2", "2026/1", "2025/2"],
+  "tipos": ["Mensalidade", "Matrícula", "Taxa"],
+  "turmas_por_ciclo": {
+    "2026/2": ["ADS-N26/2", "ADM-N26/2", "DIR-M26/2", "PED-N26/2"],
+    "2026/1": ["ADS-N26/1", "ADM-N26/1", "DIR-M26/1"],
+    "2025/2": ["ADS-N25/2", "ADM-N25/2"]
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "ok": true,
+  "leads_grid": [
+    { "data": "2026-07-28", "user_id": 8261901, "nome": "Rahi Almeida", "count": 9 },
+    { "data": "2026-07-29", "user_id": 8261901, "nome": "Rahi Almeida", "count": 11 },
+    { "data": "2026-07-30", "user_id": 8261901, "nome": "Rahi Almeida", "count": 8 },
+    { "data": "2026-07-28", "user_id": 8261902, "nome": "Gabriel Messias", "count": 7 },
+    { "data": "2026-07-29", "user_id": 8261902, "nome": "Gabriel Messias", "count": 10 },
+    { "data": "2026-07-30", "user_id": 8261903, "nome": "Beatriz Souza", "count": 6 }
+  ],
+  "evasao": {
+    "total": 15,
+    "por_tipo": {
+      "CANCELADO": 9,
+      "TRANCADO": 4,
+      "TRANSFERIDO": 2
+    },
+    "por_agente": [
+      { "user_id": 8261901, "nome": "Rahi Almeida", "total": 3 },
+      { "user_id": 8261902, "nome": "Gabriel Messias", "total": 4 },
+      { "user_id": 8261903, "nome": "Beatriz Souza", "total": 2 },
+      { "user_id": 8261904, "nome": "Hugo Ferreira", "total": 3 },
+      { "user_id": 8261905, "nome": "Juliana Prado", "total": 3 }
+    ],
+    "itens": [
+      { "rgm": "49480221", "nome": "Renata Alves Carvalho", "tipo": "CANCELADO", "data": "2026-07-12", "user_id": 8261901, "nome_agente": "Rahi Almeida" },
+      { "rgm": "49481332", "nome": "Diego Martins Souza", "tipo": "TRANCADO", "data": "2026-07-18", "user_id": 8261902, "nome_agente": "Gabriel Messias" },
+      { "rgm": "49482443", "nome": "Lucas Andrade Reis", "tipo": "TRANSFERIDO", "data": "2026-07-22", "user_id": 8261904, "nome_agente": "Hugo Ferreira" }
+    ]
+  },
+  "fora_padrao": {
+    "total": 14,
+    "dominant_prefix": "49",
+    "por_prefixo": {
+      "38": 6,
+      "41": 5,
+      "44": 3
+    },
+    "por_agente": [
+      { "user_id": 8261901, "nome": "Rahi Almeida", "total": 5 },
+      { "user_id": 8261902, "nome": "Gabriel Messias", "total": 4 },
+      { "user_id": 8261904, "nome": "Hugo Ferreira", "total": 5 }
+    ],
+    "itens": [
+      { "rgm": "38204471", "nome": "Marcos Vinicius Lopes", "user_id": 8261901, "nome_agente": "Rahi Almeida", "polo": "Barra Funda" },
+      { "rgm": "41209983", "nome": "Sabrina Dias Correia", "user_id": 8261902, "nome_agente": "Gabriel Messias", "polo": "Santo Amaro" },
+      { "rgm": "38217765", "nome": "Everton Batista da Silva", "user_id": 8261904, "nome_agente": "Hugo Ferreira", "polo": "Campinas" }
+    ]
+  }
+}

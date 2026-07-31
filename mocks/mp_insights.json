@@ -1,0 +1,43 @@
+{
+  "ok": true,
+  "campanha": {
+    "id": 7,
+    "nome": "Campanha Julho 2026 — Ciclo 2026/2",
+    "is_active": true,
+    "dt_inicio": "2026-07-01",
+    "dt_fim": "2026-07-31",
+    "def_meta_intermediaria": 30,
+    "def_meta": 45,
+    "def_supermeta": 60
+  },
+  "tier": "meta",
+  "total_matriculas": 58,
+  "dias_restantes": 1,
+  "mensagem": "Faltam <strong>2 matrículas</strong> para você bater a <strong>Supermeta</strong> e desbloquear o bônus máximo!",
+  "metas": {
+    "intermediaria": 30,
+    "meta": 45,
+    "supermeta": 60
+  },
+  "premiacao": {
+    "total": 1350.0,
+    "daily_bonus": 180.0,
+    "receb_bonus": 90.0,
+    "desbloqueie": [
+      { "tier": "supermeta", "faltam": 2, "ganho_total": 1800.0 }
+    ]
+  },
+  "pix_suporte_equipe": false,
+  "pix_fonte_fila": false,
+  "hoje": {
+    "meta": 3,
+    "realizadas": 4,
+    "aceites_fila": 6,
+    "aceites_hoje": 4,
+    "bonus_fixo": 30.0,
+    "bonus_extra": 15.0,
+    "ontem_realizadas": 2
+  },
+  "ranking_posicao": 1,
+  "ranking_total_agentes": 8
+}

@@ -1,0 +1,15 @@
+{
+  "ok": true,
+  "agentes": [
+    { "id": 8261901, "nome": "Rahi Almeida", "total_valor": 12480.5, "total_alunos": 58 },
+    { "id": 8261902, "nome": "Gabriel Messias", "total_valor": 10890.0, "total_alunos": 51 },
+    { "id": 8261903, "nome": "Beatriz Souza", "total_valor": 9760.3, "total_alunos": 47 },
+    { "id": 8261904, "nome": "Hugo Ferreira", "total_valor": 8120.0, "total_alunos": 39 },
+    { "id": 8261905, "nome": "Juliana Prado", "total_valor": 6890.9, "total_alunos": 33 }
+  ],
+  "totais": {
+    "valor": 48141.7,
+    "alunos": 228,
+    "agentes": 5
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "ok": true,
+  "user_id": 1,
+  "username": "raphael.castro",
+  "role": "admin",
+  "categoria": "Comercial",
+  "kommo_user_id": 8261837,
+  "email_cruzeiro": "raphael.castro@cruzeiroead.com.br",
+  "pages": [
+    "dashboard",
+    "comercial_dashboard",
+    "minha_performance",
+    "premiacao_admin",
+    "repasse",
+    "dist_consultor",
+    "dist_comercial",
+    "config"
+  ]
+}
