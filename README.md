@@ -1,51 +1,57 @@
 # Dash Comercial
 
-Portfólio com o **front real** das abas comerciais que construí em produção, rodando contra uma **API mock** local (sem banco, sem `.env`, sem Kommo).
+Este repo é o pedaço **comercial** do cockpit que eu montei no dia a dia — as mesmas telas que o time usa, só que aqui rodando em modo demo.
 
-## Abas
+Não é um mockup bonitinho. É o HTML/JS de verdade das abas, com uma API falsa por trás pra qualquer um conseguir abrir e navegar sem precisar de banco, CRM ou `.env`.
 
-| Aba | Template | JS (produção) |
-|-----|----------|----------------|
-| Dashboard Comercial | `_comercial_rgm.html` | `comercial_rgm.js` (~3.4k linhas) |
-| Distribuição Consultor | `_dist_consultor.html` | `dist_consultor.js` (~1.5k) |
-| Premiação | `_premiacao_admin.html` | `premiacao_admin.js` (~860) |
-| Minha Performance | `_minha_performance.html` | `minha_performance.js` (~1.8k) |
-| Repasse | `_repasse.html` | `repasse.js` (~430) |
+## O que tem aqui
 
-Isso é o código de interface de verdade — não um mockup de 300 linhas.
+| Aba | O que faz |
+|-----|-----------|
+| **Dashboard Comercial** | Matrículas, ranking de consultores, polos, metas |
+| **Distribuição Consultor** | Leads por pessoa e origem, conversão no período |
+| **Premiação** | Campanhas, equipes, faixas de meta e PIX |
+| **Minha Performance** | Visão do consultor: saldo, ritmo, calendário |
+| **Repasse** | Quanto cada um recebe a partir dos pagamentos |
 
-## Como rodar
+Por baixo dos panos: `comercial_rgm.js`, `dist_consultor.js`, `premiacao_admin.js`, `minha_performance.js`, `repasse.js` — o mesmo código de produção.
+
+## Como abrir
 
 ```bash
 python -m venv .venv
-# Windows:
-.venv\Scripts\activate
+.venv\Scripts\activate          # Windows
 pip install -r requirements.txt
 python app.py
 ```
 
-Abra: http://127.0.0.1:5055
+Depois é só entrar em [http://127.0.0.1:5055](http://127.0.0.1:5055).
 
-## O que é mock
+## Sobre os dados “falsos”
 
-- Respostas em `mocks/*.json` + rotas em `app.py`
-- Webhook n8n da Distribuição Consultor → `/api/mock/dist-webhook` (não chama produção)
-- Mutações (POST/PUT/DELETE) respondem `{ ok: true }` sem efeito
+Pra o projeto rodar sozinho, as respostas da API vêm de JSONs em `mocks/` e das rotas do `app.py`.
 
-## O que NÃO vai neste repo
+A Distribuição Consultor, no sistema real, puxa um webhook do n8n. Aqui isso foi trocado por `/api/mock/dist-webhook`, pra não bater em ambiente de produção.
 
-- Credenciais, `.env`, tokens Kommo/SIAA
-- Banco Postgres / sync massivo
-- Restante do monorepo (acadêmico, disparador, etc.)
+Botões que salvam, excluem ou sincronizam respondem “ok”, mas **não mudam nada de verdade** — é só pra UI não quebrar quando você clica.
 
-## Case study (resumo do trabalho real)
+## O que ficou de fora (de propósito)
 
-- Ranking comercial alinhado a matrículas oficiais + recuperação de RGM que some do SIAA
-- Premiação com metas/R$ por equipe (Alta Performance vs Impulso) + PIX diário
-- Minha Performance com saldo, faixas, heatmap e visão Suporte
-- Repasse de recebimentos com taxa configurável por ciclo
-- Distribuição por consultor/origem (n8n + cruzamento Kommo)
+Não subi senha, token, `.env` nem integração real com Kommo/SIAA.
+
+Também não tem o Postgres nem o sync pesado do sistema completo. O resto do monorepo (acadêmico, disparador WhatsApp, etc.) fica em outro lugar — este repo é só a fatia comercial.
+
+## O que isso resolveu no trabalho real
+
+Algumas dores que essas telas foram feitas pra resolver:
+
+- O ranking do comercial precisava bater com as matrículas oficiais — e ainda recuperar aluno que some do relatório do SIAA sem ter cancelado de fato.
+- Premiação deixou de ser “uma meta pra todo mundo”: cada equipe (Alta Performance / Impulso) tem meta e R$ próprios, mais PIX no dia.
+- O consultor vê a própria performance (saldo, faixas, calendário); o time de Suporte tem uma visão agregada.
+- Repasse calcula quanto vai pra cada consultor a partir dos recebimentos, com taxa que dá pra ajustar por ciclo.
+- Distribuição mostra de onde veio o lead e pra quem foi, cruzando n8n com o Kommo.
 
 ---
 
-[Rapha-Tomita](https://github.com/Rapha-Tomita) · snapshot de portfólio (código de UI real + mocks).
+Feito por [Rapha-Tomita](https://github.com/Rapha-Tomita).  
+Portfólio com UI real + dados de demonstração.
