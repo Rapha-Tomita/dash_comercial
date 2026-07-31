@@ -1,0 +1,22 @@
+{
+  "kpis": {
+    "recebido": 186420.55,
+    "total_repasse": 55926.17,
+    "taxa": 30,
+    "com_pagamento": 612,
+    "consultores": 18
+  },
+  "agentes": [
+    { "nome": "Rahi", "recebido": 18420.0, "repasse": 5526.0, "alunos": 48 },
+    { "nome": "Gabriel Messias", "recebido": 16210.5, "repasse": 4863.15, "alunos": 44 },
+    { "nome": "Beatriz", "recebido": 14880.0, "repasse": 4464.0, "alunos": 41 },
+    { "nome": "Hugo", "recebido": 13950.0, "repasse": 4185.0, "alunos": 39 },
+    { "nome": "Juliana", "recebido": 12840.0, "repasse": 3852.0, "alunos": 36 }
+  ],
+  "detalhe": [
+    { "rgm": "49501234", "tipo": "Cartão", "turma": "Graduação EAD", "ciclo": "2026/2", "recebido": 498.0, "repasse": 149.4 },
+    { "rgm": "49501881", "tipo": "Boleto", "turma": "Graduação EAD", "ciclo": "2026/2", "recebido": 398.0, "repasse": 119.4 },
+    { "rgm": "49502210", "tipo": "PIX", "turma": "Graduação EAD", "ciclo": "2026/2", "recebido": 450.0, "repasse": 135.0 },
+    { "rgm": "49502999", "tipo": "Cartão", "turma": "Graduação EAD", "ciclo": "2026/2", "recebido": 520.0, "repasse": 156.0 }
+  ]
+}

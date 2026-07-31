@@ -1,0 +1,36 @@
+{
+  "campanhas": [
+    {
+      "nome": "Julho 2026 · Alta Performance",
+      "status": "Ativa",
+      "periodo": "2026-07-01 → 2026-07-31",
+      "inter": 35,
+      "meta": 45,
+      "super": 55,
+      "valor_inter": 25,
+      "valor_meta": 40,
+      "valor_super": 60
+    },
+    {
+      "nome": "Julho 2026 · Impulso",
+      "status": "Ativa",
+      "periodo": "2026-07-01 → 2026-07-31",
+      "inter": 25,
+      "meta": 32,
+      "super": 40,
+      "valor_inter": 20,
+      "valor_meta": 30,
+      "valor_super": 45
+    }
+  ],
+  "grupos": [
+    { "nome": "Alta Performance", "membros": 8 },
+    { "nome": "Impulso", "membros": 10 }
+  ],
+  "pix_faixas": [
+    { "equipe": "Alta Performance", "min": 8, "valor": 80 },
+    { "equipe": "Alta Performance", "min": 12, "valor": 150 },
+    { "equipe": "Impulso", "min": 5, "valor": 50 },
+    { "equipe": "Impulso", "min": 8, "valor": 90 }
+  ]
+}
