@@ -51,7 +51,18 @@ Algumas dores que essas telas foram feitas pra resolver:
 - Repasse calcula quanto vai pra cada consultor a partir dos recebimentos, com taxa que dá pra ajustar por ciclo.
 - Distribuição mostra de onde veio o lead e pra quem foi, cruzando n8n com o Kommo.
 
+## SQL (exemplos)
+
+Em produção isso tudo bebe de Postgres (snapshots do SIAA em JSONB, dedupe por RGM, metas por equipe…).  
+Aqui não tem banco ligado — mas deixei em `sql/` alguns exemplos comentados do tipo de query que escrevi:
+
+- `01_matriculas_periodo.sql` — uma linha por aluno no período (`DISTINCT ON` + data)
+- `02_ranking_recuperacao_siaa.sql` — recupera matrícula que sumiu do último relatório
+- `03_premiacao_metas_equipe.sql` — metas/R$ diferentes por equipe na mesma campanha
+
+São didáticos (sem dado real). Dá pra ler só os comentários e entender o raciocínio.
+
 ---
 
 Feito por [Rapha-Tomita](https://github.com/Rapha-Tomita).  
-Portfólio com UI real + dados de demonstração.
+Portfólio com UI real + dados de demonstração + exemplos de SQL.
